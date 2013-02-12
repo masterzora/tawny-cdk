@@ -541,7 +541,7 @@ module CDK
 
 
   # This function checks to see if a link has been requested
-  def checkForLink (line, filename)
+  def CDK.checkForLink (line, filename)
     f_pos = 0
     x = 3
     if line.nil?
@@ -568,7 +568,7 @@ module CDK
   # slash
   # For now this function is just a wrapper for File.basename kept for ease of
   # porting and will be completely replaced in the future
-  def baseName (pathname)
+  def CDK.baseName (pathname)
     File.basename(pathname)
   end
 
@@ -576,7 +576,7 @@ module CDK
   # last slash
   # For now this function is just a wrapper for File.dirname kept for ease of
   # porting and will be completely replaced in the future
-  def dirName (pathname)
+  def CDK.dirName (pathname)
     File.dirname(pathname)
   end
 
