@@ -53,11 +53,21 @@ module CDK
   MAX_BUTTONS = 200
 
   ALL_SCREENS = []
+  ALL_OBJECTS = []
   
   # This beeps then flushes the stdout stream
   def CDK.Beep
     Ncurses.beep
     $stdout.flush
+  end
+
+  # This sets a blank string to be len of the given characer.
+  def CDK.cleanChar(s, len, character)
+    s << character * len
+  end
+
+  def CDK.cleanChtype(s, len, character)
+    s.concat(character * len)
   end
 
   # This takes an x and y position and realigns the values iff they sent in
@@ -166,7 +176,7 @@ module CDK
     elsif CDK.digit?(string[from+1]) and CDK.digit?(string[from + 2])
       if Ncurses.has_colors?
         # XXX: Only checks if terminal has colours not if colours are started
-        pair = string[from + 1..form + 2].to_i
+        pair = string[from + 1..from + 2].to_i
         mask[0] = Ncurses.COLOR_PAIR(pair)
       else
         mask[0] = Ncurses.A_BOLD
@@ -264,11 +274,13 @@ module CDK
   def CDK.char2Chtype (string, to, align)
     to << 0
     align << LEFT
+    result = []
 
-    # We make two passes because we may have indents and tabs to expand and do
-    # not know in advance how large the result will be.
     if string.size > 0
       used = 0
+
+      # We make two passes because we may have indents and tabs to expand and do
+      # not know in advance how large the result will be.
       [0, 1].each do |pass|
         adjust = 0
         attrib = Ncurses::A_NORMAL
@@ -278,7 +290,7 @@ module CDK
         x = 3
 
         # Look for an alignment marker.
-        if string[0] == Ncurses::L_MARKER
+        if string[0] == L_MARKER
           if string[1] == 'C' && string[2] == R_MARKER
             align[0] = CENTER
             start = 3
@@ -289,11 +301,11 @@ module CDK
             start = 3
           elsif string[1] == 'B' && string[2] == '='
             # Set the item index value in the string.
-            result = [' ', ' ', ' ']
+            result = [' '.ord, ' '.ord, ' '.ord]
 
             # Pull out the bullet marker.
             while x < string.size and string[x] != R_MARKER
-              result << string[x] | Ncurses::A_BOLD
+              result << string[x].ord | Ncurses::A_BOLD
               x += 1
             end
             adjust = 1
@@ -336,7 +348,7 @@ module CDK
               inside_marker = true
             elsif string[from] == "\\" && string[from + 1] == L_MARKER
               from += 1
-              result << (string[from] | attrib)
+              result << (string[from].ord | attrib)
               used += 1
               from += 1
             elsif string[from] == "\t"
@@ -345,13 +357,13 @@ module CDK
                 used += 1
               end while (used & 7).nonzero?
             else
-              result << (string[from] || attrib)
+              result << (string[from].ord | attrib)
               used += 1
             end
           else
             case string[from]
             when R_MARKER
-              inside_marker = 0
+              inside_marker = false
             when '#'
               last_char = 0
               case string[from + 2]
@@ -446,9 +458,10 @@ module CDK
               attrib |= ~(mask[0])
             end
           end
+          from += 1
         end
 
-        if result.size = 0
+        if result.size == 0
           result << attrib
         end
       end
@@ -657,6 +670,9 @@ module CDK
   end
 
   class CDKOBJS
+    attr_accessor :screen_index, :screen, :has_focus, :is_visible, :box
+    attr_accessor :ULChar, :URChar, :LLChar, :LRChar, :HZChar, :VTChar, :BXAttr
+
     def initialize
       @has_focus = true
       @is_visible = true
@@ -675,46 +691,6 @@ module CDK
       # set default exit-types
       @exit_type = :NEVER_ACTIVATED
       @early_exit = :NEVER_ACTIVATED
-    end
-
-    def screen_index=(value)
-      @screen_index = value
-    end
-
-    def screen_index
-      @screen_index
-    end
-
-    def screen=(value)
-      @screen_index = value
-    end
-
-    def screen
-      @screen
-    end
-
-    def has_focus=(value)
-      @has_focus = value
-    end
-
-    def has_focus
-      @has_focus
-    end
-
-    def is_visible=(value)
-      @is_visible = value
-    end
-
-    def is_visible
-      @is_visible
-    end
-
-    def box=(value)
-      @box = value
-    end
-
-    def box
-      @box
     end
 
     def object_type
@@ -823,12 +799,9 @@ module CDK
     # Draw the widget's title
     def drawCdkTitle(win)
       (0...@title_lines).each do |x|
-        # writeChtype (win,
-        #              obj->titlePos[x] + obj->borderSize,
-        #              x + obj->borderSize
-        #              obj->title[x]
-        #              HORIZONTAL, 0,
-        #              obj->titleLen[x])
+        Draw.writeChtype(@win, @title_pos[x] + @border_size,
+            x + @border_size, @title[x], CDK::HORIZONTAL, 0,
+            @title_len[x])
       end
     end
 
@@ -838,18 +811,16 @@ module CDK
     end
 
     # Set data for preprocessing
-    # void setCDKObjectPreProcess (CDKOBJS *obj, PROCESSFN fn, void *data)
-    # {
-    #   obj->preProcessFunction = fn;
-    #   obj->preProcessData = data;
-    # }
+    def setCDKObjectPreProcess (fn, data)
+      @pre_process_function = fn
+      @pre_process_data = data
+    end
 
     # Set data for postprocessing
-    # void setCDKObjectPostProcess (CDKOBJS *obj, PROCESSFN fn, void *data)
-    # {
-    #   obj->postProcessFunction = fn;
-    #   obj->postProcessData = data;
-    # }
+    def setCDKObjectPostProcess (fn, data)
+      @post_process_function = fn
+      @post_process_data = data
+    end
     
     # Set the object's exit-type based on the input.
     # The .exitType field should have been part of the CDKOBJS struct, but it
@@ -877,16 +848,56 @@ module CDK
       end
       return result
     end
+
+    def getc
+      cdktype = @object_type
+      # CDKOBJS *test = bindableObject (&cdktype, obj);
+      result = @input_window.wgetch
+
+      #if (result >= 0
+      #    && test != 0
+      #    && (unsigned)result < test->bindingCount
+      #    && test->bindingList[result].bindFunction == getcCDKBind)
+      # [...]
+      # else if (test == 0
+      #          || (unsigned)result >= test->bindingCount
+      #          || test->bindingList[result].bindFunction == 0)
+      case result
+      when "\r".ord, "\n".ord
+        result = Ncurses::KEY_ENTER
+      when "\t".ord
+        result = Ncurses::KEY_TAB
+      when "\177".ord  # DELETE
+        result = Ncurses::KEY_DC
+      when "\b".ord
+        result = Ncurses::KEY_BACKSPACE
+      when "A".ord & 0x1f  # CDK_BEGOFLINE - Ctrl-A
+        result = Ncurses::KEY_HOME
+      when "E".ord & 0x1f  # CDK_ENDOFLINE - Ctrl-E
+        result = Ncurses::KEY_END
+      when "F".ord & 0x1f  # CDK_FORCHAR - Ctrl-F
+        result = Ncurses::KEY_RIGHT
+      when "B".ord & 0x1f  # CDK_BACKCHAR - Ctrl-B
+        result = Ncurses::KEY_LEFT
+      when "N".ord & 0x1f  # CDK_NEXT - Ctrl-N
+        result = Ncurses::KEY_TAB
+      when "P".ord & 0x1f  # CDK_PREF - Ctrl-P
+        result = Ncurses::KEY_BTAB
+      end
+
+      return result
+    end
+
+    def getch(function_key)
+      key = self.getc
+      function_key << (key >= Ncurses::KEY_MIN && key <= Ncurses::KEY_MAX)
+      return key
+    end
 #  CDKOBJS struct values copied below for reference convenience
 
-#   int          screenIndex;
-#   CDKSCREEN *  screen;
 #   const CDKFUNCS * fn;
-#   boolean      box;
 #   int          borderSize;
 #   boolean      acceptsFocus;
-#   boolean      hasFocus;
-#   boolean      isVisible;
 #   WINDOW *     inputWindow;
 #   void *       dataPtr;
 #   CDKDataUnion resultData;
@@ -897,14 +908,6 @@ module CDK
 #   int *        titlePos;
 #   int *        titleLen;
 #   int          titleLines;
-#   /* line-drawing (see 'box') */
-#   chtype       ULChar;         /* lines: upper-left */
-#   chtype       URChar;         /* lines: upper-right */
-#   chtype       LLChar;         /* lines: lower-left */
-#   chtype       LRChar;         /* lines: lower-right */
-#   chtype       VTChar;         /* lines: vertical */
-#   chtype       HZChar;         /* lines: horizontal */
-#   chtype       BXAttr;
 #   /* events */
 #   EExitType    exitType;
 #   EExitType    earlyExit;
@@ -940,9 +943,10 @@ module CDK
   end
 
   class SCREEN
+    attr_accessor :object_focus, :object_count, :object_limit, :object, :window
     def initialize (window)
       # initialization for the first time
-      if CDK::ALL_SCREENS.size = 0
+      if CDK::ALL_SCREENS.size == 0
         # Set up basic curses settings.
         # #ifdef HAVE_SETLOCALE
         # setlocale (LC_ALL, "");
@@ -955,49 +959,8 @@ module CDK
       CDK::ALL_SCREENS << self
       @object_count = 0
       @object_limit = 2
-      # screen->object = typeMallocN (CDKOBJS *, screen->objectLimit);
       @object = Array.new(@object_limit, nil)
       @window = window
-    end
-
-    def object_focus
-      @object_focus
-    end
-
-    def object_focus=(value)
-      @object_focus = value
-    end
-
-    def object_count
-      @object_count
-    end
-
-    def object_count=(value)
-      @object_count = value
-    end
-
-    def object_limit
-      @object_limit
-    end
-
-    def object_limit=(value)
-      @object_limit = value
-    end
-
-    def object
-      @object
-    end
-
-    def object=(value)
-      @object = value
-    end
-
-    def window=(value)
-      @window = value
-    end
-
-    def window
-      @window
     end
 
     def destroyCDKObject
@@ -1007,7 +970,7 @@ module CDK
     end
 
     # This registers a CDK object with a screen.
-    def registerCDKObject(cdktype, object)
+    def register(cdktype, object)
       if @object_count + 1 >= @object_limit
         @object_limit += 2
         @object_limit *= 2
@@ -1058,7 +1021,7 @@ module CDK
     def setScreenIndex(number, obj)
       obj.screen_index = number
       obj.screen = self
-      screen.object[number] = obj
+      self.object[number] = obj
     end
 
     def validIndex(n)
@@ -1094,22 +1057,22 @@ module CDK
       end
     end
 
-    # This calls refreshCDKScreen, (made consistent with widgets)
-    def drawCDKScreen
-      self.refreshCDKScreen
+    # This calls SCREEN.refresh, (made consistent with widgets)
+    def draw
+      self.refresh
     end
 
     # Refresh one CDK window.
     # FIXME(original): this should be rewritten to use the panel library, so
     # it would not be necessary to touch the window to ensure that it covers
     # other windows.
-    def refreshCDKWindow(win)
+    def SCREEN.refreshCDKWindow(win)
       win.touchwin
       win.wrefresh
     end
 
     # This refreshes all the objects in the screen.
-    def refreshCDKScreen
+    def refresh
       focused = -1
       visible = -1
 
@@ -1129,7 +1092,7 @@ module CDK
               focused = x
             end
           else
-            obj.erase_obj
+            obj.erase
           end
         end
       end
@@ -1141,19 +1104,19 @@ module CDK
           obj.has_focus = (x == focused)
 
           if obj.is_visible
-            obj.drawObj(obj.box)
+            obj.draw(obj.box)
           end
         end
       end
     end
 
-    # THis clears all the objects in the screen
-    def eraseCDKScreen
-      # We just call the eraseObj function
+    # This clears all the objects in the screen
+    def erase
+      # We just call the object erase function
       (0...@object_count).each do |x|
         obj = @object[x]
         if obj.validObjType(obj.object_Type)
-          obj.eraseObj
+          obj.erase
         end
       end
 
@@ -1168,7 +1131,7 @@ module CDK
         before = @object_count
 
         if obj.validObjType(obj.object_type)
-          obj.eraseObj
+          obj.erase
           obj.destroyCDKObject
           x -= (@object_count - before)
         end
@@ -1176,19 +1139,292 @@ module CDK
     end
 
     # This destroys a CDK screen.
-    def destroyCDKScreen
+    def destroy
       CDK::ALL_SCREENS.delete(self)
     end
 
     # This is added to remain consistent
     def self.endCDK
       Ncurses.echo
-      Ncurses.nobreak
+      Ncurses.nocbreak
       Ncurses.endwin
     end
   end
 
-  class SCROLL < CDK::SCREEN
+  class LABEL < CDK::CDKOBJS
+    def initialize(cdkscreen, xplace, yplace, mesg, rows, box, shadow)
+      super()
+      parent_width = cdkscreen::window.getmaxx
+      parent_height = cdkscreen::window.getmaxy
+      box_width = -2**30  # -INFINITY
+      box_height = 0
+      xpos = [xplace]
+      ypos = [yplace]
+      x = 0
+
+      #   if (rows <= 0
+      #       || (label = newCDKObject (CDKLABEL, &my_funcs)) == 0
+      #       || (label->info = typeCallocN (chtype *, rows + 1)) == 0
+      #       || (label->infoLen = typeCallocN (int, rows + 1)) == 0
+      #       || (label->infoPos = typeCallocN (int, rows + 1)) == 0)
+      #   {
+      #      destroyCDKObject (label);
+      #      return (0);
+      #   }
+
+      if rows <= 0
+        return 0
+      end
+
+      #setCDKLabelBox (label, Box)
+      self.setBox(box)
+      box_height = rows + 2 * @border_size
+
+      @info = []
+      @info_len = []
+      @info_pos = []
+
+      # Determine the box width.
+      (0...rows).each do |x|
+        #Translate the string to a chtype array
+        info_len = []
+        info_pos = []
+        @info << CDK.char2Chtype(mesg[x], info_len, info_pos)
+        @info_len << info_len[0]
+        @info_pos << info_pos[0]
+        box_width = [box_width, @info_len[x]].max
+      end
+      box_width += 2 * @border_size
+
+      # Create the string alignments.
+      (0...rows).each do |x|
+        @info_pos[x] = CDK.justifyString(box_width - 2 * @border_size,
+            @info_len[x], @info_pos[x])
+      end
+
+      # Make sure we didn't extend beyond the dimensions of the window.
+      box_width = if box_width > parent_width
+                  then parent_width
+                  else box_width
+                  end
+      box_height = if box_height > parent_height
+                   then parent_height
+                   else box_height
+                   end
+
+      # Rejustify the x and y positions if we need to
+      CDK.alignxy(cdkscreen.window, xpos, ypos, box_width, box_height)
+      @screen = cdkscreen
+      @parent = cdkscreen.window
+      @win = Ncurses::WINDOW.new(box_height, box_width, ypos[0], xpos[0])
+      @shadow_win = nil
+      @xpos = xpos[0]
+      @ypos = ypos[0]
+      @rows = rows
+      @box_width = box_width
+      @box_height = box_height
+      @input_window = @win
+      @has_focus = false
+      @shadow = shadow
+
+      if @win.nil?
+        #destroyCDKObject (label);
+        #return (0);
+        return
+      end
+
+      @win.keypad(true)
+
+      # If a shadow was requested, then create the shadow window.
+      if shadow
+        @shadow_win = Ncurses::WINDOW.new(box_height, box_width,
+            ypos[0] + 1, xpos[0] + 1)
+      end
+
+      # Register this
+      cdkscreen.register(:LABEL, self)
+      #
+      # Return the label pointer
+      # return (label);
+    end
+
+    # This was added for the builder.
+    # void activateCDKLabel (CDKLABEL #label, chtype *actions GCC_UNUSED)
+    def activate(actions)
+      self.drawCDKLabel(@box)
+    end
+
+    # This sets multiple attributes of the widget
+    def set(mesg, lines, box)
+      self.setMessage(mesg, lines)
+      self.setBox(box)
+    end
+
+    # This sets the information within the label.
+    def setMessage(info, info_size)
+      # Clean out the old message.`
+      (0...@rows).each do |x|
+        @info[x] = ''
+        @info_pos = 0
+        @info_len = 0
+      end
+
+      @rows = if info_size < @rows
+              then info_size
+              else @rows
+              end
+
+      # Copy in the new message.
+      (0...@rows).each do |x|
+        info_len = []
+        info_pos = []
+        @info[x] = CDK.char2Chtype(info[x], info_len, info_pos)
+        @info_len[x] = info_len[0]
+        @info_pos[x] = info_pos[0]
+        @info_pos[x] = Cdk.justifyString(@box_width - 2 * @border_size,
+            @info_len[x], info_pos[x])
+      end
+
+      # Redraw the label widget.
+      # eraseCDKLabel (label);
+      # drawCDKLabel (label, ObjOf (label)->box;
+      self.erase
+      self.draw(box)
+    end
+
+    def getMessage(size)
+      size << @rows
+      return @info
+    end
+
+    # This sets the box flag for the label widget.
+    def setBox(box)
+      @box = box
+      @border_size = if @box then 1 else 0 end
+    end
+
+    def getBox
+      return @box
+    end
+
+    # This sets the background attribute of the widget.
+    def setBKattrLabel(attrib)
+      @win.wbkgd(attrib)
+    end
+
+    # This draws the label widget.
+    def draw(box)
+      # Is there a shadow?
+      unless @shadow_win.nil?
+        Draw.drawShadow(@shadow_win)
+      end
+
+      # Box the widget if asked.
+      if @box
+        Draw.drawObjBox(@win, self)
+      end
+
+      # Draw in the message.
+      (0...@rows).each do |x|
+        Draw.writeChtype(@win,
+            @info_pos[x] + @border_size, x + @border_size,
+            @info[x], CDK::HORIZONTAL, 0, @info_len[x])
+      end
+
+      # Refresh the window
+      @win.wrefresh
+    end
+
+    # This erases the label widget
+    def erase
+      CDK.eraseCursesWindow(@win)
+      CDK.eraseCursesWindow(@shadow_win)
+    end
+
+    # This moves the label field to the given location
+    def moveCDKLabel(xplace, yplace, relative, refresh_flag)
+      current_x = @win.getbegx
+      current_y = @win.getbegy
+      xpos = [xplace]
+      ypos = [yplace]
+      xdiff = 0
+      ydiff = 0
+
+      # If this is a relative move, then we will adjust where we want
+      # to move to.
+      if relative
+        xpos = [@win.getbegx + xplace]
+        ypos = [@win.getbegy + yplace]
+      end
+
+      # Adjust the window if we need to
+      CDK.alignxy(@screen.window, xpos, ypos, @box_width, @box_height)
+
+      # Get the diference.
+      xdiff = current_x - xpos[0]
+      ydiff = current_y = ypos[0]
+
+      # Move the window to the new location.
+      CDK.moveCursesWindow(@win, -xdiff, -ydiff)
+      CDK.moveCursesWindow(@shadow_win, -xdiff, -ydiff)
+
+      # Touch the windows so the 'move'
+      SCREEN.refreshCDKWindow(@screen.window)
+
+      # Redraw the window, if they asked for it.
+      if refresh_flag
+        self.draw(@box)
+      end
+    end
+
+    # This destroys the label object pointer.
+    # static void _destroyCDKLabel (CDKOBJS *object)
+    def destroy
+      # if (object != 0)
+      # {
+      #    CDKLABEL *label = (CDKLABEL *)object;
+    
+      #    CDKfreeChtypes (label->info);
+      #    freeChecked (label->infoLen);
+      #    freeChecked (label->infoPos);
+    
+      #    /* Free up the window pointers. */
+      #    deleteCursesWindow (label->shadowWin);
+      #    deleteCursesWindow (label->win);
+    
+      #    /* Clean the key bindings. */
+      #    cleanCDKObjectBindings (vLABEL, label);
+    
+      #    /* Unregister the object. */
+      #    unregisterCDKObject (vLABEL, label);
+      # }
+    end
+
+    # This pauses until a user hits a key...
+    def wait(key)
+      function_key = []
+      if key.ord == 0
+        code = self.getch(function_key)
+      else
+        # Only exit when a specific key is hit
+        while true
+          code = self.getch(function_key)
+          if code == key.ord
+            break
+          end
+        end
+      end
+      return code
+    end
+
+    # dummyInject (Label)
+    # dummyFocus (Label)
+    # dummyUnfocus (Label)
+    # dummyRefreshData (Label)
+    # dummySaveData (Label)
+  end
+
+  class SCROLL < CDK::CDKOBJS
     #struct SScroll {
     #   CDKOBJS      obj;
     #   WINDOW       *parent;
@@ -1224,6 +1460,8 @@ module CDK
     #   chtype       titlehighlight; /* */
     #   chtype       highlight;      /* */
     #};
+    
+    attr_reader :exit_type
 
     def initialize (cdkscreen, xplace, yplace, splace, height, width, title,
         list, list_size, numbers, highlight, box, shadow)
@@ -1271,11 +1509,11 @@ module CDK
       end
 
       # Make sure we didn't extend beyond the dimensions of the window.
-      @box_width = if box_width > parent_width 
+      box_width = if box_width > parent_width 
                    then parent_width - scroll_adjust 
                    else box_width 
                    end
-      @box_height = if box_height > parent_height
+      box_height = if box_height > parent_height
                     then parent_height
                     else box_height
                     end
@@ -1285,12 +1523,12 @@ module CDK
       # Rejustify the x and y positions if we need to.
       xtmp = [xpos]
       ytmp = [ypos] 
-      CDK.alignxy(TMPWINDOWTMP, xtmp, ytmp, @box_width, @box_height)
+      CDK.alignxy(TMPWINDOWTMP, xtmp, ytmp, box_width, box_height)
       xpos = xtmp[0]
       ypos = ytmp[0]
 
       # Make the scrolling window
-      @win = Ncurses::WINDOW.new(@box_height, @box_width, ypos, xpos)
+      @win = Ncurses::WINDOW.new(box_height, box_width, ypos, xpos)
 
       # Is the scrolling window null?
       if @win.nil?
@@ -1303,7 +1541,7 @@ module CDK
       # Create the scrollbar window.
       if splace == CDK::RIGHT
         @scrollbar_win = @win.subwin(self.maxViewSize, 1, ypos, 
-            xpos + @box_width - @border_size - 1)
+            xpos + box_width - @border_size - 1)
       elsif splace == CDK::LEFT
         @scrollbar_win = @win.subwin(self.maxViewSize, 1, ypos,
             self.SCREEN_XPOS(xpos))
@@ -1314,7 +1552,7 @@ module CDK
       # create the list window
       
       @list_win = @win.subwin(self.maxViewSize,
-          @box_width - (2 * @border_size) - scroll_adjust,
+          box_width - (2 * @border_size) - scroll_adjust,
           ypos, SCREEN_XPOS(xpos) + (if splace == CDK::LEFT then 1 else 0 end))
 
       # Set the rest of the variables
@@ -1339,7 +1577,7 @@ module CDK
 
       # Do we need to create a shadow?
       if shadow
-        @shadow_win = Ncurses::WINDOW.new(@box_height, box_width,
+        @shadow_win = Ncurses::WINDOW.new(box_height, box_width,
             ypos + 1, xpos + 1)
       end
 
@@ -1375,7 +1613,7 @@ module CDK
         while true
           self.fixCursorPosition
           function_key = []
-          input = self.obj.getchCDKObject(function_key)
+          input = self.obj.getch(function_key)
 
           # Inject the character into the widget.
           ret = self.injectCDKScroll(input)
@@ -1455,8 +1693,8 @@ module CDK
             self.setExitType(input)
             complete = true
           when CDK_REFRESH
-            @screen.eraseCDKScreen
-            @screen.refreshCDKScreen
+            @screen.erase
+            @screen.refresh
           when Ncurses::KEY_TAB, Ncurses::KEY_ENTER
             self.setExitType(input)
             ret = @current_item
@@ -1556,7 +1794,7 @@ module CDK
     def drawCDKScroll(box)
       # Draw in the shadow if we need to.
       unless @shadow_win.nil?
-        # drawShadow (scrollp->shadowWin)
+        Draw.drawShadow(@shadow_win)
       end
 
       self.drawCdkTitle(@win)
@@ -1573,14 +1811,11 @@ module CDK
                   else Ncurses::A_NORMAL
                   end
 
-      # writeChtypeAttrib (s->listWin,
-      #                    (screenPos >= 0 ? screenPos : 0,
-      #                    s->currentHigh,
-      #                    s->item[s->currentItem],
-      #                    highlight,
-      #                    HORIZONTAL,
-      #                    (screenPos >= 0) ? 0 : (1 - screenPos),
-      #                    s->itemLen[s->currentItem]);
+      Draw.writeChtypeAttrib(@list_win,
+          if screen_pos >= 0 then screen_pos else 0 end,
+          @current_high, @item[@current_item], highlight, CDK::HORIZONTAL,
+          if screen_pos >= 0 then 0 else 1 - screen_pos end,
+          @item_len[@current_item])
     end
 
     def maxViewSize
@@ -1599,10 +1834,8 @@ module CDK
         (0...@view_size).each do |j|
           k = j + @current_top
 
-          # writeBlanks (scrollp->listWin,
-          #              0, j,
-          #              HORIZONTAL, 0
-          #              scrollp->boxWidth - 2 * BorderOf (scrollp));
+          Draw.writeBlanks(@list_win, 0, j, CDK::HORIZONTAL, 0,
+            @box_width - (2 * @border_size))
 
           # Draw the elements in the scrolling list.
           if k < @list_size
@@ -1610,13 +1843,11 @@ module CDK
             ypos = j
 
             # Write in the correct line.
-            # writeChtype (scrollp->listWin,
-            #              (screenPos >= 0) ? screenPos : 1,
-            #              ypos,
-            #              scrollp->item[k],
-            #              HORIZONTAL,
-            #              (screenPos >= 0) ? 0 : (1 - screenPos),
-            #              scrollp->itemLen[k]);
+            Draw.writeChtype(@list_win,
+                if screen_pos >= 0 then screenPos else 1 end,
+                ypos, @item[k], CDK::HORIZONTAL,
+                if screen_pos >= 0 then 0 else 1 - screen_pos end,
+                @item_len[k])
           end
         end
 
@@ -1642,7 +1873,7 @@ module CDK
 
       # Box it if needed.
       if box
-        # drawObjBox (scrollp->win, ObjOf(scrollp))
+        Draw.drawObjBox(@win, self)
       end
 
       # Refresh the window
@@ -1674,7 +1905,7 @@ module CDK
       new_len = Array.new(new_size)
       new_pos = Array.new(new_size)
 
-      [0...old_size].each do |n|
+      (0...old_size).each do |n|
         new_list[n] = @item[n]
         new_len[n] = @item_len[n]
         new_pos[n] = @item_pos[n]
@@ -1753,8 +1984,7 @@ module CDK
 
       # Clean up the display.
       (x...@view_size).each do |x|
-        # writeBlanks (scrollp->win, 1, SCREEN_YPOS (scrollp, x),
-        #              HORIZONTAL, 0, scrollp->boxWidth - 2);
+        writeBlanks(@win, 1, x, CDK::HORIZONTAL, 0, @box_width - 2);
       end
 
       self.setViewSize(list_size)
@@ -1780,7 +2010,7 @@ module CDK
     end
 
     # This sets the box attribute of the scrolling list.
-    def setCDKScrollBox (box)
+    def setCDKScrollBox(box)
       @box = box
       @border_size = if box then 1 else 0 end
     end
@@ -1954,9 +2184,9 @@ module CDK
   module Draw
     # This sets up a basic set of color pairs. These can be redefined if wanted
     def Draw.initCDKColor
-      color = [Ncurses.COLOR_WHITE, Ncurses.COLOR_RED, Ncurses.COLOR_GREEN,
-          Ncurses.COLOR_YELLOW, Ncurses.COLOR_BLUE, Ncurses.COLOR_MAGENTA,
-          Ncurses.COLOR_CYAN, Ncurses.COLOR_BLACK]
+      color = [Ncurses::COLOR_WHITE, Ncurses::COLOR_RED, Ncurses::COLOR_GREEN,
+          Ncurses::COLOR_YELLOW, Ncurses::COLOR_BLUE, Ncurses::COLOR_MAGENTA,
+          Ncurses::COLOR_CYAN, Ncurses::COLOR_BLACK]
       pair = 1
 
       if Ncurses.has_colors?
@@ -1999,7 +2229,7 @@ module CDK
 
     # This draws a box with attributes and lets the user define each
     # element of the box
-    def Draw.attrbox(tlc, trc, blc, brc, horz, vert, attr)
+    def Draw.attrbox(win, tlc, trc, blc, brc, horz, vert, attr)
       x1 = 0
       y1 = 0
       y2 = win.getmaxy - 1
@@ -2047,7 +2277,7 @@ module CDK
     def Draw.drawObjBox(win, object)
       Draw.attrbox(win,
           object.ULChar, object.URChar, object.LLChar, object.LRChar,
-          object.HZCHar, object.VTChar, object.BXAttr)
+          object.HZChar, object.VTChar, object.BXAttr)
     end
 
     # This draws a line on the given window. (odd angle lines not working yet)
@@ -2122,9 +2352,9 @@ module CDK
     def Draw.writeBlanks(window, xpos, ypos, align, start, endn)
       if start < endn
         want = (endn - start) + 1000
-        blanks = ' ' * want  # TODO revisit this -- it's basically poor man's malloc right now
+        blanks = ''
 
-        CDK.cleanChar(blanks, want -1, ' ')
+        CDK.cleanChar(blanks, want - 1, ' ')
         Draw.writeChar(window, xpos, ypos, blanks, align, start, endn)
       end
     end
@@ -2171,13 +2401,13 @@ module CDK
         # Draw the message on a horizontal axis.
         display = [diff, window.getmaxx - xpos].min
         (0...display).each do |x|
-          window.mvwaddch(ypos, xpos + x, string[x + start] | attr)
+          window.mvwaddch(ypos, xpos + x, string[x + start].ord | attr)
         end
       else
         # Draw the message on a vertical axis.
         display = [diff, window.getmaxy - ypos].min
         (0...display).each do |x|
-          window.mvwaddch(ypos + x, xpos, string[x + start] | attr)
+          window.mvwaddch(ypos + x, xpos, string[x + start].ord | attr)
         end
       end
     end
