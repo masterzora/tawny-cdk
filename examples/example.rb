@@ -4,12 +4,24 @@ require '../cdk'
 
 class Example
   def Example.parse_opts(opts, params)
-    opts.on('-N', "Disable box") do
-      params.box = false
+    if params.box
+      opts.on('-N', "Disable box") do
+        params.box = false
+      end
+    else
+      opts.on('-N', "Enable box") do
+        params.box = true
+      end
     end
 
-    opts.on('-S', "Enable shadow") do
-      params.shadow = true
+    if params.shadow
+      opts.on('-S', 'Disable shadow') do
+        params.shadow = false
+      end
+    else
+      opts.on('-S', "Enable shadow") do
+        params.shadow = true
+      end
     end
 
     opts.on('-X XPOS', OptionParser::DecimalInteger, "X position") do |x|
