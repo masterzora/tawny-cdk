@@ -17,26 +17,23 @@ class ScrollExample < CLIExample
     params.shadow = false
     params.x_value = CDK::CENTER
     params.y_value = CDK::CENTER
+    params.h_value = 10
+    params.w_value = 50
     params.c = false
     params.s_value = CDK::RIGHT
     params.title = "<C></5>Pick a file"
-    params.h_value = 10
-    params.w_value = 50
 
     super(opts, params)
-    params.c = false
 
     opts.on('-c', 'create the data after the widget') do
       params.c = true
     end
 
-    params.s_value = CDK::RIGHT
     opts.on('-s SCROLL_POS', OptionParser::DecimalInteger,
         'location for the scrollbar') do |spos|
       params.spos = spos
     end
 
-    params.title = "<C></5>Pick a file"
     opts.on('-t TITLE', String, 'title for the widget') do |title|
       params.title = title
     end
