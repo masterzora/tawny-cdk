@@ -52,6 +52,24 @@ module CDK
   MAX_ITEMS = 2000
   MAX_BUTTONS = 200
 
+  REFRESH = 'L'.ord & 0x1f
+  PASTE = 'V'.ord & 0x1f
+  COPY = 'Y'.ord & 0x1f
+  ERASE = 'U'.ord & 0x1f
+  CUT = 'X'.ord & 0x1f
+  BEGOFLINE = 'A'.ord & 0x1f
+  ENDOFLINE = 'E'.ord & 0x1f
+  BACKCHAR = 'B'.ord & 0x1f
+  FORCHAR = 'F'.ord & 0x1f
+  TRANSPOSE = 'T'.ord & 0x1f
+  NEXT = 'N'.ord & 0x1f
+  PREV = 'P'.ord & 0x1f
+  DELETE = "\177".ord
+  KEY_ESC = "\033".ord
+  KEY_RETURN = "\012".ord
+  KEY_TAB = "\t".ord
+
+
   ALL_SCREENS = []
   ALL_OBJECTS = []
   
@@ -279,195 +297,193 @@ module CDK
     if string.size > 0
       used = 0
 
-      # We make two passes because we may have indents and tabs to expand and do
-      # not know in advance how large the result will be.
-      [0, 1].each do |pass|
-        adjust = 0
-        attrib = Ncurses::A_NORMAL
-        last_char = 0
-        start = 0
-        used = 0
-        x = 3
+      # The original code makes two passes since it has to pre-allocate space but
+      # we should be able to make do with one since we can dynamically size it
+      adjust = 0
+      attrib = Ncurses::A_NORMAL
+      last_char = 0
+      start = 0
+      used = 0
+      x = 3
 
-        # Look for an alignment marker.
-        if string[0] == L_MARKER
-          if string[1] == 'C' && string[2] == R_MARKER
-            align[0] = CENTER
-            start = 3
-          elsif string[1] == 'R' && string[2] == R_MARKER
-            align[0] = RIGHT
-            start = 3
-          elsif string[1] == 'L' && string[2] == R_MARKER
-            start = 3
-          elsif string[1] == 'B' && string[2] == '='
-            # Set the item index value in the string.
-            result = [' '.ord, ' '.ord, ' '.ord]
+      # Look for an alignment marker.
+      if string[0] == L_MARKER
+        if string[1] == 'C' && string[2] == R_MARKER
+          align[0] = CENTER
+          start = 3
+        elsif string[1] == 'R' && string[2] == R_MARKER
+          align[0] = RIGHT
+          start = 3
+        elsif string[1] == 'L' && string[2] == R_MARKER
+          start = 3
+        elsif string[1] == 'B' && string[2] == '='
+          # Set the item index value in the string.
+          result = [' '.ord, ' '.ord, ' '.ord]
 
-            # Pull out the bullet marker.
-            while x < string.size and string[x] != R_MARKER
-              result << string[x].ord | Ncurses::A_BOLD
+          # Pull out the bullet marker.
+          while x < string.size and string[x] != R_MARKER
+            result << string[x].ord | Ncurses::A_BOLD
+            x += 1
+          end
+          adjust = 1
+
+          # Set the alignment variables
+          start = x
+          used = x
+        elsif string[1] == 'I' && string[2] == '='
+          from = 3
+          x = 0
+
+          while from < string.size && string[from] != Ncurses.R_MARKER
+            if CDK.digit?(string[from])
+              adjust = adjust * 10 + string[from].to_i
               x += 1
             end
-            adjust = 1
-
-            # Set the alignment variables
-            start = x
-            used = x
-          elsif string[1] == 'I' && string[2] == '='
-            from = 3
-            x = 0
-
-            while from < string.size && string[from] != Ncurses.R_MARKER
-              if CDK.digit?(string[from])
-                adjust = adjust * 10 + string[from].to_i
-                x += 1
-              end
-              from += 1
-            end
-
-            start = x + 4
+            from += 1
           end
-        end
-        
-        while adjust > 0
-          adjust -= 1
-          result << ' '
-          used += 1
-        end
 
-        # Set the format marker boolean to false
-        inside_marker = false
+          start = x + 4
+        end
+      end
+      
+      while adjust > 0
+        adjust -= 1
+        result << ' '
+        used += 1
+      end
 
-        # Start parsing the character string.
-        from = start
-        while from < string.size
-          # Are we inside a format marker?
-          if !inside_marker
-            if string[from] == L_MARKER &&
-                ['/', '!', '#'].include?(string[from + 1])
-              inside_marker = true
-            elsif string[from] == "\\" && string[from + 1] == L_MARKER
-              from += 1
-              result << (string[from].ord | attrib)
+      # Set the format marker boolean to false
+      inside_marker = false
+
+      # Start parsing the character string.
+      from = start
+      while from < string.size
+        # Are we inside a format marker?
+        if !inside_marker
+          if string[from] == L_MARKER &&
+              ['/', '!', '#'].include?(string[from + 1])
+            inside_marker = true
+          elsif string[from] == "\\" && string[from + 1] == L_MARKER
+            from += 1
+            result << (string[from].ord | attrib)
+            used += 1
+            from += 1
+          elsif string[from] == "\t"
+            begin
+              result << ' '
               used += 1
-              from += 1
-            elsif string[from] == "\t"
-              begin
-                result << ' '
-                used += 1
-              end while (used & 7).nonzero?
-            else
-              result << (string[from].ord | attrib)
-              used += 1
-            end
+            end while (used & 7).nonzero?
           else
-            case string[from]
-            when R_MARKER
-              inside_marker = false
-            when '#'
-              last_char = 0
-              case string[from + 2]
+            result << (string[from].ord | attrib)
+            used += 1
+          end
+        else
+          case string[from]
+          when R_MARKER
+            inside_marker = false
+          when '#'
+            last_char = 0
+            case string[from + 2]
+            when 'L'
+              case string[from + 1]
               when 'L'
-                case string[from + 1]
-                when 'L'
-                  last_char = Ncurses.ACS_LLCORNER
-                when 'U'
-                  last_char = Ncurses.ACS_ULCORNER
-                when 'H'
-                  last_char = Ncurses.ACS_HLINE
-                when 'V'
-                  last_char = Ncurses.ACS_VLINE
-                when 'P'
-                  last_char = Ncurses.ACS_PLUS
-                end
-              when 'R'
-                case string[from + 1]
-                when 'L'
-                  last_char = Ncurses.ACS_LRCORNER
-                when 'U'
-                  last_char = Ncurses.ACS_URCORNER
-                end
-              when 'T'
-                case string[from + 1]
-                when 'T'
-                  last_char = Ncurses.ACS_TTEE
-                when 'R'
-                  last_char = Ncurses.ACS_RTEE
-                when 'L'
-                  last_char = Ncurses.ACS_LTEE
-                when 'B'
-                  last_char = Ncurses.ACS_BTEE
-                end
-              when 'A'
-                case string[from + 1]
-                when 'L'
-                  last_char = Ncurses.ACS_LARROW
-                when 'R'
-                  last_char = Ncurses.ACS_RARROW
-                when 'U'
-                  last_char = Ncurses.ACS_UARROW
-                when 'D'
-                  last_char = Ncurses.ACS_DARROW
-                end
-              else
-                case [string[from + 1], string[from + 2]]
-                when ['D', 'I']
-                  last_char = Ncurses.ACS_DIAMOND
-                when ['C', 'B']
-                  last_char = Ncurses.ACS_CKBOARD
-                when ['D', 'G']
-                  last_char = Ncurses.ACS_DEGREE
-                when ['P', 'M']
-                  last_char = Ncurses.ACS_PLMINUS
-                when ['B', 'U']
-                  last_char = Ncurses.ACS_BULLET
-                when ['S', '1']
-                  last_char = Ncurses.ACS_S1
-                when ['S', '9']
-                  last_char = Ncurses.ACS_S9
-                end
+                last_char = Ncurses.ACS_LLCORNER
+              when 'U'
+                last_char = Ncurses.ACS_ULCORNER
+              when 'H'
+                last_char = Ncurses.ACS_HLINE
+              when 'V'
+                last_char = Ncurses.ACS_VLINE
+              when 'P'
+                last_char = Ncurses.ACS_PLUS
               end
+            when 'R'
+              case string[from + 1]
+              when 'L'
+                last_char = Ncurses.ACS_LRCORNER
+              when 'U'
+                last_char = Ncurses.ACS_URCORNER
+              end
+            when 'T'
+              case string[from + 1]
+              when 'T'
+                last_char = Ncurses.ACS_TTEE
+              when 'R'
+                last_char = Ncurses.ACS_RTEE
+              when 'L'
+                last_char = Ncurses.ACS_LTEE
+              when 'B'
+                last_char = Ncurses.ACS_BTEE
+              end
+            when 'A'
+              case string[from + 1]
+              when 'L'
+                last_char = Ncurses.ACS_LARROW
+              when 'R'
+                last_char = Ncurses.ACS_RARROW
+              when 'U'
+                last_char = Ncurses.ACS_UARROW
+              when 'D'
+                last_char = Ncurses.ACS_DARROW
+              end
+            else
+              case [string[from + 1], string[from + 2]]
+              when ['D', 'I']
+                last_char = Ncurses.ACS_DIAMOND
+              when ['C', 'B']
+                last_char = Ncurses.ACS_CKBOARD
+              when ['D', 'G']
+                last_char = Ncurses.ACS_DEGREE
+              when ['P', 'M']
+                last_char = Ncurses.ACS_PLMINUS
+              when ['B', 'U']
+                last_char = Ncurses.ACS_BULLET
+              when ['S', '1']
+                last_char = Ncurses.ACS_S1
+              when ['S', '9']
+                last_char = Ncurses.ACS_S9
+              end
+            end
 
-              if last_char.nonzero?
-                adjust = 1
+            if last_char.nonzero?
+              adjust = 1
+              from += 2
+
+              if string[from + 1] == '('
+                # check for a possible numeric modifier
                 from += 2
+                adjust = 0
 
-                if string[from + 1] == '('
-                  # check for a possible numeric modifier
-                  from += 2
-                  adjust = 0
-
-                  while from < string.size && string[from] != ')'
-                    if CDK.digit?(string[from])
-                      adjust = (adjust * 10) + string[from].to_i
-                    end
+                while from < string.size && string[from] != ')'
+                  if CDK.digit?(string[from])
+                    adjust = (adjust * 10) + string[from].to_i
                   end
                 end
               end
-              (0..adjust).each do |x|
-                result << (last_char | attrib)
-                used += 1
-              end
-            when '/'
-              mask = []
-              from = CDK.encodeAttribute(string, from, mask)
-              attrib |= mask[0]
-            when '!'
-              mask = []
-              from = CDK.encodeAttribute(string, from, mask)
-              attrib |= ~(mask[0])
             end
+            (0..adjust).each do |x|
+              result << (last_char | attrib)
+              used += 1
+            end
+          when '/'
+            mask = []
+            from = CDK.encodeAttribute(string, from, mask)
+            attrib |= mask[0]
+          when '!'
+            mask = []
+            from = CDK.encodeAttribute(string, from, mask)
+            attrib |= ~(mask[0])
           end
-          from += 1
         end
+        from += 1
+      end
 
-        if result.size == 0
-          result << attrib
-        end
+      if result.size == 0
+        result << attrib
       end
       to[0] = used
     else
-      result = ''
+      result = []
     end
     return result
   end
@@ -672,6 +688,7 @@ module CDK
   class CDKOBJS
     attr_accessor :screen_index, :screen, :has_focus, :is_visible, :box
     attr_accessor :ULChar, :URChar, :LLChar, :LRChar, :HZChar, :VTChar, :BXAttr
+    attr_reader :binding_list
 
     def initialize
       @has_focus = true
@@ -691,6 +708,9 @@ module CDK
       # set default exit-types
       @exit_type = :NEVER_ACTIVATED
       @early_exit = :NEVER_ACTIVATED
+
+      # Bound functions
+      @binding_list = {}
     end
 
     def object_type
@@ -747,7 +767,7 @@ module CDK
     end
 
     # This sets the background color of the widget.
-    def setCDKObjectBackgroundColor(color)
+    def setBackgroundColor(color)
       return if color.nil? || color == ''
 
       junk1 = []
@@ -772,7 +792,7 @@ module CDK
             len = []
             align = []
             holder = CDK.char2Chtype(line, len, align)
-            max_width = [len, max_width].max
+            max_width = [len[0], max_width].max
           end
           box_width = [box_width, max_width + 2 * @border_size].max
         else
@@ -789,7 +809,7 @@ module CDK
           pos_x = []
           @title << CDK.char2Chtype(temp[x], len_x, pos_x)
           @title_len.concat(len_x)
-          @title_pos << CDK.justifyString(title_width, len_x, pos_x)
+          @title_pos << CDK.justifyString(title_width, len_x[0], pos_x[0])
         end
       end
 
@@ -807,7 +827,7 @@ module CDK
 
     # Remove storage for the widget's title.
     def cleanCdkTitle
-      @title_lines = 0
+      @title_lines = ''
     end
 
     # Set data for preprocessing
@@ -825,33 +845,31 @@ module CDK
     # Set the object's exit-type based on the input.
     # The .exitType field should have been part of the CDKOBJS struct, but it
     # is used too pervasively in older applications to move (yet).
-    def setCdkExitType(type, ch)
-      type << 0
+    def setExitType(ch)
       case ch
-      when Ncurses::KEY_ERROR
-        type[0] = :ERROR
-      when Ncurses::KEY_ESC
-        type[0] = :ESCAPE_HIT
-      when Ncurses::KEY_TAB, Ncurses::KEY_ENTER
-        type[0] = :NORMAL
+      when Ncurses::ERR
+        @exit_type = :ERROR
+      when CDK::KEY_ESC
+        @exit_type = :ESCAPE_HIT
+      when CDK::KEY_TAB, Ncurses::KEY_ENTER, CDK::KEY_RETURN
+        @exit_type = :NORMAL
       when 0
-        type[0] = :EARLY_EXIT
+        @exit_type = :EARLY_EXIT
       end
-      # make the result available via the object
-      @exit_type = type[0]
     end
 
     def validCDKObject
       result = false
       if CDK::ALL_OBJECTS.include?(self)
-        result = self.validObjType(@object_type)
+        result = self.validObjType(self.object_type)
       end
       return result
     end
 
     def getc
-      cdktype = @object_type
+      cdktype = self.object_type
       # CDKOBJS *test = bindableObject (&cdktype, obj);
+      test = self.bindableObject(cdktype)
       result = @input_window.wgetch
 
       #if (result >= 0
@@ -862,27 +880,33 @@ module CDK
       # else if (test == 0
       #          || (unsigned)result >= test->bindingCount
       #          || test->bindingList[result].bindFunction == 0)
-      case result
-      when "\r".ord, "\n".ord
-        result = Ncurses::KEY_ENTER
-      when "\t".ord
-        result = Ncurses::KEY_TAB
-      when "\177".ord  # DELETE
-        result = Ncurses::KEY_DC
-      when "\b".ord
-        result = Ncurses::KEY_BACKSPACE
-      when "A".ord & 0x1f  # CDK_BEGOFLINE - Ctrl-A
-        result = Ncurses::KEY_HOME
-      when "E".ord & 0x1f  # CDK_ENDOFLINE - Ctrl-E
-        result = Ncurses::KEY_END
-      when "F".ord & 0x1f  # CDK_FORCHAR - Ctrl-F
-        result = Ncurses::KEY_RIGHT
-      when "B".ord & 0x1f  # CDK_BACKCHAR - Ctrl-B
-        result = Ncurses::KEY_LEFT
-      when "N".ord & 0x1f  # CDK_NEXT - Ctrl-N
-        result = Ncurses::KEY_TAB
-      when "P".ord & 0x1f  # CDK_PREF - Ctrl-P
-        result = Ncurses::KEY_BTAB
+      if result >= 0 && !(test.nil?) && test.binding_list.include?(result) &&
+          test.binding_list[result][0] == :getc
+        result = test.binding_list[result][1]
+      elsif test.nil? || !(test.binding_list.include?(result)) ||
+          test.binding_list[result][0].nil?
+        case result
+        when "\r".ord, "\n".ord
+          result = Ncurses::KEY_ENTER
+        when "\t".ord
+          result = KEY_TAB
+        when CDK::DELETE
+          result = Ncurses::KEY_DC
+        when "\b".ord
+          result = Ncurses::KEY_BACKSPACE
+        when CDK::BEGOFLINE
+          result = Ncurses::KEY_HOME
+        when CDK::ENDOFLINE
+          result = Ncurses::KEY_END
+        when CDK::FORCHAR
+          result = Ncurses::KEY_RIGHT
+        when CDK::BACKCHAR
+          result = Ncurses::KEY_LEFT
+        when CDK::NEXT
+          result = Ncurses::KEY_TAB
+        when CDK::PREV
+          result = Ncurses::KEY_BTAB
+        end
       end
 
       return result
@@ -893,6 +917,67 @@ module CDK
       function_key << (key >= Ncurses::KEY_MIN && key <= Ncurses::KEY_MAX)
       return key
     end
+
+    def bindableObject(cdktype)
+      if cdktype != self.object_type
+        return nil
+      elsif [:FSELECT, :ALPHALIST].include?(self.object_type)
+        return @entry_field
+      else
+        return self
+      end
+    end
+
+    def bind(type, key, function, data)
+      obj = self.bindableObject(type)
+      if key.ord < Ncurses::KEY_MAX && !(obj.nil?)
+        if key.ord != 0
+          obj.binding_list[key.ord] = [function, data]
+        end
+      end
+    end
+
+    def unbind(type, key)
+      obj = self.bindableObject(type)
+      unless obj.nil?
+        obj.binding_list.delete(key)
+      end
+    end
+
+    def cleanBindings(type)
+      obj = self.bindableObject(type)
+      obj.binding_list.clear
+    end
+
+    # This checks to see if the binding for the key exists:
+    # If it does then it runs the command and returns its value, normally true
+    # If it doesn't it returns a false.  This way we can 'overwrite' coded
+    # bindings.
+    def checkBind(type, key)
+      obj = self.bindableObject(type)
+      if !(obj.nil?) && obj.binding_list.include?(key)
+        function = obj.binding_list[key][0]
+        data = obj.binding_list[key][1]
+
+        if function == :getc
+          return data
+        else
+          return function.call(type, obj, data, key)
+        end
+      end
+      return false
+    end
+
+    # This checks to see if the binding for the key exists.
+    def isBind(type, key)
+      result = false
+      obj = self.bindableObject(type)
+      unless obj.nil?
+        result = obj.binding_list.include?(key)
+      end
+
+      return result
+    end
 #  CDKOBJS struct values copied below for reference convenience
 
 #   const CDKFUNCS * fn;
@@ -902,7 +987,6 @@ module CDK
 #   void *       dataPtr;
 #   CDKDataUnion resultData;
 #   unsigned     bindingCount;
-#   CDKBINDING * bindingList;
 #   /* title-drawing */
 #   chtype **    title;
 #   int *        titlePos;
@@ -963,7 +1047,7 @@ module CDK
       @window = window
     end
 
-    def destroyCDKObject
+    def destroy
       # TODO Let Ruby take care of memory management, please
       # This is currently just kept for ease of porting.
       # It should be deleted at nearest convenience
@@ -1057,6 +1141,51 @@ module CDK
       end
     end
 
+    # This pops up a message.
+    def popupLabel(mesg, count)
+      #Create the label.
+      popup = CDK::LABEL.new(self, CENTER, CENTER, mesg, count, true, false)
+
+      old_state = Ncurses.curs_set(0)
+      #Draw it on the screen
+      popup.draw(true)
+
+      # Wait for some input.
+      popup.win.keypad(true)
+      popup.getch([])
+
+      # Kill it.
+      popup.destroy
+
+      # Clean the screen.
+      Ncurses.curs_set(old_state)
+      self.erase
+      self.refresh
+    end
+
+    # This pops up a message
+    def popupLabelAttrib(mesg, count, attrib)
+      # Create the label.
+      popup = CDK::LABEL.new(self, CENTER, CENTER, mesg, count, true, false)
+      popup.setBackgroundAttrib
+
+      old_state = Ncurses.curs_set(0)
+      # Draw it on the screen)
+      popup.draw(true)
+
+      # Wait for some input
+      popup.win.keypad(true)
+      popup.getch([])
+
+      # Kill it.
+      popup.destroy
+
+      # Clean the screen.
+      Ncurses.curs_set(old_state)
+      screen.erase
+      screen.refresh
+    end
+
     # This calls SCREEN.refresh, (made consistent with widgets)
     def draw
       self.refresh
@@ -1115,12 +1244,13 @@ module CDK
       # We just call the object erase function
       (0...@object_count).each do |x|
         obj = @object[x]
-        if obj.validObjType(obj.object_Type)
+        if obj.validObjType(obj.object_type)
           obj.erase
         end
       end
 
       # Refresh the screen.
+      @window.touchwin
       @window.wrefresh
     end
 
@@ -1132,7 +1262,7 @@ module CDK
 
         if obj.validObjType(obj.object_type)
           obj.erase
-          obj.destroyCDKObject
+          obj.destroy
           x -= (@object_count - before)
         end
       end
@@ -1152,6 +1282,8 @@ module CDK
   end
 
   class LABEL < CDK::CDKOBJS
+    attr_accessor :win
+
     def initialize(cdkscreen, xplace, yplace, mesg, rows, box, shadow)
       super()
       parent_width = cdkscreen::window.getmaxx
@@ -1332,6 +1464,7 @@ module CDK
       end
 
       # Refresh the window
+      @win.touchwin
       @win.wrefresh
     end
 
@@ -1426,14 +1559,12 @@ module CDK
 
   class SCROLL < CDK::CDKOBJS
     #struct SScroll {
-    #   CDKOBJS      obj;
     #   WINDOW       *parent;
     #   WINDOW       *win;
     #   WINDOW       *scrollbarWin;
     #   WINDOW       *listWin;
     #   WINDOW       *shadowWin;
     #   int          titleAdj;       /* unused */
-    #   chtype **    item;           /* */
     #   int *        itemPos;        /* */
     #   int *        itemLen;        /* */
     #   int          maxTopItem;     /* */
@@ -1454,36 +1585,35 @@ module CDK
     #   int          togglePos;      /* position of scrollbar thumb/toggle */
     #   float        step;           /* increment for scrollbar */
     #
-    #   EExitType    exitType;       /* */
     #   boolean      shadow;         /* */
     #   boolean      numbers;        /* */
     #   chtype       titlehighlight; /* */
     #   chtype       highlight;      /* */
     #};
     
-    attr_reader :exit_type
+    attr_reader :exit_type, :item
 
     def initialize (cdkscreen, xplace, yplace, splace, height, width, title,
         list, list_size, numbers, highlight, box, shadow)
+      super()
       parent_width = cdkscreen.window.getmaxx
-      parent_height = cdkscree.nwindow.height
+      parent_height = cdkscreen.window.getmaxy
       box_width = width
       box_height = height
       xpos = xplace
       ypos = yplace
       scroll_adjust = 0
       bindings = {
-        CDK_BACKCHAR => Ncurses::KEY_PPAGE,
-        CDK_FORCHAR  => Ncurses::KEY_NPAGE,
-        'g'          => Ncurses::KEY_HOME,
-        '1'          => Ncurses::KEY_HOME,
-        'G'          => Ncurses::KEY_END,
-        '<'          => Ncurses::KEY_HOME,
-        '>'          => Ncurses::KEY_END
+        CDK::BACKCHAR => Ncurses::KEY_PPAGE,
+        CDK::FORCHAR  => Ncurses::KEY_NPAGE,
+        'g'           => Ncurses::KEY_HOME,
+        '1'           => Ncurses::KEY_HOME,
+        'G'           => Ncurses::KEY_END,
+        '<'           => Ncurses::KEY_HOME,
+        '>'           => Ncurses::KEY_END
       }
 
-      @box = box
-      @border_size = if box.nil? then 0 else 1 end
+      self.setCDKScrollBox(box)
 
       # If the height is a negative value, the height will be ROWS-height,
       # otherwise the height will be the given height
@@ -1493,7 +1623,7 @@ module CDK
       # otherwise the width will be the given width
       box_width = CDK.setWidgetDimension(parent_width, width, 0)
     
-      self.setCdkTitle(title, box_width)
+      box_width = self.setCdkTitle(title, box_width)
 
       # Set the box height.
       if @title_lines > box_height
@@ -1509,11 +1639,11 @@ module CDK
       end
 
       # Make sure we didn't extend beyond the dimensions of the window.
-      box_width = if box_width > parent_width 
+      @box_width = if box_width > parent_width 
                    then parent_width - scroll_adjust 
                    else box_width 
                    end
-      box_height = if box_height > parent_height
+      @box_height = if box_height > parent_height
                     then parent_height
                     else box_height
                     end
@@ -1523,12 +1653,12 @@ module CDK
       # Rejustify the x and y positions if we need to.
       xtmp = [xpos]
       ytmp = [ypos] 
-      CDK.alignxy(TMPWINDOWTMP, xtmp, ytmp, box_width, box_height)
+      CDK.alignxy(cdkscreen.window, xtmp, ytmp, @box_width, @box_height)
       xpos = xtmp[0]
       ypos = ytmp[0]
 
       # Make the scrolling window
-      @win = Ncurses::WINDOW.new(box_height, box_width, ypos, xpos)
+      @win = Ncurses::WINDOW.new(@box_height, @box_width, ypos, xpos)
 
       # Is the scrolling window null?
       if @win.nil?
@@ -1540,25 +1670,25 @@ module CDK
 
       # Create the scrollbar window.
       if splace == CDK::RIGHT
-        @scrollbar_win = @win.subwin(self.maxViewSize, 1, ypos, 
-            xpos + box_width - @border_size - 1)
+        @scrollbar_win = @win.subwin(self.maxViewSize, 1,
+            self.SCREEN_YPOS(ypos), xpos + box_width - @border_size - 1)
       elsif splace == CDK::LEFT
-        @scrollbar_win = @win.subwin(self.maxViewSize, 1, ypos,
-            self.SCREEN_XPOS(xpos))
+        @scrollbar_win = @win.subwin(self.maxViewSize, 1,
+            self.SCREEN_YPOS(ypos), self.SCREEN_XPOS(xpos))
       else
         @scrollbar_win = nil
       end
 
       # create the list window
-      
       @list_win = @win.subwin(self.maxViewSize,
           box_width - (2 * @border_size) - scroll_adjust,
-          ypos, SCREEN_XPOS(xpos) + (if splace == CDK::LEFT then 1 else 0 end))
+          self.SCREEN_YPOS(ypos),
+          self.SCREEN_XPOS(xpos) + (if splace == CDK::LEFT then 1 else 0 end))
 
       # Set the rest of the variables
       @screen = cdkscreen
       @parent = cdkscreen.window
-      @shadow_win = 0
+      @shadow_win = nil
       @scrollbar_placement = splace
       @max_left_char = 0
       @left_char = 0
@@ -1572,31 +1702,33 @@ module CDK
 
       # Create the scrolling list item list and needed variables.
       if self.createCDKScrollItemList(numbers, list, list_size) <= 0
-        return 0
+        return nil
       end
 
       # Do we need to create a shadow?
       if shadow
-        @shadow_win = Ncurses::WINDOW.new(box_height, box_width,
+        @shadow_win = Ncurses::WINDOW.new(@box_height, box_width,
             ypos + 1, xpos + 1)
       end
 
-      # Setup the key bindings.
-      # for (x = 0; x < (int)SIZEOF (bindings); ++x)
-      #   bindCDKObject (vSCROLL,
-      #                  scrollp,
-      #                  (chtype)bindings[x].from,
-      #                  getcCDKBind,
-      #                  (void *)(long)bindings[x].to);
-      #
-      #   registerCDKObject (cdkscreen, vSCROLL, scrollp);
+      # Set up the key bindings.
+      bindings.each do |from, to|
+        #self.bind(:SCROLL, from, getc_lambda, to)
+        self.bind(:SCROLL, from, :getc, to)
+      end
+
+      cdkscreen.register(:SCROLL, self);
       
       return self
     end
 
+    def object_type
+      :SCROLL
+    end
+
     # Put the cursor on the currently-selected item's row.
     def fixCursorPosition
-      scrollbar_adj = if @scrollbar_placemtn == LEFT then 1 else 0 end
+      scrollbar_adj = if @scrollbar_placement == LEFT then 1 else 0 end
       ypos = self.SCREEN_YPOS(@current_item - @current_top)
       xpos = self.SCREEN_XPOS(0) + scrollbar_adj
 
@@ -1605,26 +1737,25 @@ module CDK
     end
 
     # This actually does all the 'real' work of managing the scrolling list.
-    def activateCDKScroll(actions)
+    def activate(actions)
       # Draw the scrolling list
-      self.drawCDKScroll(@box)
+      self.draw(@box)
 
       if actions.nil? || actions.size == 0
         while true
           self.fixCursorPosition
-          function_key = []
-          input = self.obj.getch(function_key)
+          input = self.getch([])
 
           # Inject the character into the widget.
-          ret = self.injectCDKScroll(input)
+          ret = self.inject(input)
           if @exit_type != :EARLY_EXIT
             return ret
           end
         end
       else
         # Inject each character one at a time.
-        (0...actions.size).each do |i|
-          ret = self.injectCDKScroll(actions[i])
+        actions.each do |action|
+          ret = self.inject(action)
           if @exit_type != :EARLY_EXIT
             return ret
           end
@@ -1637,7 +1768,7 @@ module CDK
     end
 
     # This injects a single character into the widget.
-    def injectCDKScroll(input)
+    def inject(input)
       pp_return = 1
       ret = -1
       complete = false
@@ -1661,45 +1792,44 @@ module CDK
       # Should we continue?
       if pp_return != 0
         # Check for a predefined key binding.
-        if self.checkCDKObjectBind(:SCROLL, input) != 0
-          self.checkEarlyExit
+        if self.checkBind(:SCROLL, input) != false
+          #self.checkEarlyExit
           complete = true
         else
           case input
           when Ncurses::KEY_UP
-            #scroller_KEY_UP (widget)
+            self.KEY_UP
           when Ncurses::KEY_DOWN
-            #scroller_KEY_DOWN (widget)
+            self.KEY_DOWN
           when Ncurses::KEY_RIGHT
-            #scroller_KEY_RIGHT (widget)
+            self.KEY_RIGHT
           when Ncurses::KEY_LEFT
-            #scroller_KEY_LEFT (widget)
+            self.KEY_LEFT
           when Ncurses::KEY_PPAGE
-            #scroller_KEY_PPAGE (widget)
+            self.KEY_PPAGE
           when Ncurses::KEY_NPAGE
-            #scroller_KEY_NPAGE (widget)
+            self.KEY_NPAGE
           when Ncurses::KEY_HOME
-            #scroller_KEY_HOME (widget)
+            self.KEY_HOME
           when Ncurses::KEY_END
-            #scroller_KEY_END (widget)
+            self.KEY_END
           when '$'
             @left_char = @max_left_char
           when '|'
             @left_char = 0
-          when Ncurses.KEY_ESC
+          when CDK::KEY_ESC
             self.setExitType(input)
             complete = true
-          when Ncurses.KEY_ERROR
+          when Ncurses::ERR
             self.setExitType(input)
             complete = true
-          when CDK_REFRESH
+          when REFRESH
             @screen.erase
             @screen.refresh
-          when Ncurses::KEY_TAB, Ncurses::KEY_ENTER
+          when CDK::KEY_TAB, Ncurses::KEY_ENTER, CDK::KEY_RETURN
             self.setExitType(input)
             ret = @current_item
             complete = true
-          else
           end
         end
         
@@ -1719,13 +1849,15 @@ module CDK
       end
 
       self.fixCursorPosition
-      # ResultOf (widget).valueInt = ret
-      return ret != -1
+      @result_data = ret
+
+      #return ret != -1
+      return ret
     end
 
     # This allows the user to accelerate to a position in the scrolling list.
-    def setCDKScrollPosition (item)
-      # scroller_SetPosition (scrollp, item);
+    def setCDKScrollPosition(item)
+      self.setPosition(item);
     end
 
     # Get/Set the current item number of the scroller.
@@ -1734,7 +1866,7 @@ module CDK
     end
 
     def setCDKScrollCurrentItem(item)
-      # scroller_SetPosition(widget, item);
+      self.setPosition(item);
     end
 
     def getCDKScrollCurrentTop
@@ -1749,11 +1881,11 @@ module CDK
       end
       @current_top = item
 
-      # scroller_SetPosition(widget, item);
+      self.setPosition(item);
     end
 
     # This moves the scroll field to the given location.
-    def moveCDKScroll(xplace, yplace, relative, refresh_flag)
+    def move(xplace, yplace, relative, refresh_flag)
       current_x = @win.getbegx
       current_y = @win.getbegy
       xpos = xplace
@@ -1765,11 +1897,15 @@ module CDK
       # move to
       if relative
         xpos = @win.getbegx + xplace
-        ypos = @win.gebegy + yplace
+        ypos = @win.getbegy + yplace
       end
 
       # Adjust the window if we need to.
-      # alignxy (WindowOf (scrollp, &xpos, &pos, scrollp->boxWidth, scrollp->boxHeight);
+      xtmp = [xpos]
+      ytmp = [ypos]
+      CDK.alignxy(@screen.window, xpos, ypos, @box_width, @box_height)
+      xpos = xtmp[0]
+      ypos = ytmp[0]
       
       # Get the difference
       xdiff = current_x - xpos
@@ -1782,16 +1918,16 @@ module CDK
       CDK.moveCursesWindow(@scrollbar_win, -xdiff, -ydiff)
 
       # Touch the windows so they 'move'.
-      # refreshCDKWindow (WindowOf (scrollp));
+      self.screen.window.refresh
 
       # Redraw the window, if they asked for it.
       if refresh_flag
-        self.drawCDKScroll(@box)
+        self.draw(@box)
       end
     end
 
     # This function draws the scrolling list widget.
-    def drawCDKScroll(box)
+    def draw(box)
       # Draw in the shadow if we need to.
       unless @shadow_win.nil?
         Draw.drawShadow(@shadow_win)
@@ -1806,7 +1942,7 @@ module CDK
     def drawCDKScrollCurrent
       # Rehighlight the current menu item.
       screen_pos = @item_pos[@current_item] - @left_char
-      highlight = if self.HasFocusObj
+      highlight = if self.has_focus
                   then @highlight
                   else Ncurses::A_NORMAL
                   end
@@ -1819,12 +1955,31 @@ module CDK
     end
 
     def maxViewSize
-      # return scroller_MaxViewSize (scrollp)
+      return @box_height - (2 * @border_size + @title_lines)
     end
 
     # Set variables that depend upon the list-size
     def setViewSize(list_size)
-      # scroller_SetViewSize (scrollp, listSize);
+      @view_size = self.maxViewSize
+      @list_size = size
+      @list_item = size - 1
+      @max_top_item = size - @view_size
+
+      if size < @view_size
+        @view_size = size
+        @max_top_item = 0
+      end
+
+      if @list_size > 0 && self.maxViewSize > 0
+        @step = 1.0 * self.maxViewSize / @list_size
+        @toggle_size = if @list_size > self.maxViewSize
+                       then 1
+                       else @step.ceil
+                       end
+      else
+        @step = 1
+        @toggle_size = 1
+      end
     end
 
     def drawCDKScrollList(box)
@@ -1844,7 +1999,7 @@ module CDK
 
             # Write in the correct line.
             Draw.writeChtype(@list_win,
-                if screen_pos >= 0 then screenPos else 1 end,
+                if screen_pos >= 0 then screen_pos else 1 end,
                 ypos, @item[k], CDK::HORIZONTAL,
                 if screen_pos >= 0 then 0 else 1 - screen_pos end,
                 @item_len[k])
@@ -1877,6 +2032,7 @@ module CDK
       end
 
       # Refresh the window
+      @win.touchwin
       @win.wrefresh
     end
 
@@ -1890,11 +2046,11 @@ module CDK
     end
 
     # This function destroys
-    def destroyCDKScroll
+    def destroy
     end
 
     # This function erases the scrolling list from the screen.
-    def eraseCDKScroll
+    def erase
       CDK.eraseCursesWindow(@win)
       CDK.eraseCursesWindow(@shadow_win)
     end
@@ -1926,10 +2082,11 @@ module CDK
       item_len = []
       item_pos = []
       @item[which] = CDK.char2Chtype(value, item_len, item_pos)
-      @item_len = item_len[0]
-      @item_pos = item_pos[0]
+      @item_len[which] = item_len[0]
+      @item_pos[which] = item_pos[0]
 
-      @item_pos[which] = CDK.char2Chtype(value, @item_len, @item_pos)
+      @item_pos[which] = CDK.justifyString(@box_width,
+          @item_len[which], @item_pos[which])
       return true
     end
 
@@ -1970,7 +2127,7 @@ module CDK
     end
 
     # This sets certain attributes of the scrolling list.
-    def setCDKScroll(list, list_size, numbers, highlight, box)
+    def set(list, list_size, numbers, highlight, box)
       self.setCDKScrollItems(list, list_size, numbers)
       self.setCDKScrollHighlight(highlight)
       self.setCDKScrollBox(box)
@@ -1983,7 +2140,7 @@ module CDK
       end
 
       # Clean up the display.
-      (x...@view_size).each do |x|
+      (0...@view_size).each do |x|
         writeBlanks(@win, 1, x, CDK::HORIZONTAL, 0, @box_width - 2);
       end
 
@@ -2032,14 +2189,17 @@ module CDK
 
             target[k] &= Ncurses::A_ATTRIBUTES
             target[k] |= source[k].ord
+            k += 1
           end
         end
       end
     end
 
     def insertListItem(item)
-      # TODO revisit this
-      true
+      @item = @item[0..item] + @item[item..-1]
+      @item_len = @item_len[0..item] + @item_len[item..-1]
+      @item_pos = @item_pos[0..item] + @item_pos[item..-1]
+      return true
     end
 
     # This adds a single item to a scrolling list, at the end of the list.
@@ -2050,7 +2210,7 @@ module CDK
       have = 0
 
       if self.allocListArrays(@list_size, @list_size + 1) &&
-          self.allocListItem(@item_number, temp, have,
+          self.allocListItem(item_number, temp, have,
           if @numbers then item_number + 1 else 0 end,
           item)
         # Determine the size of the widest item.
@@ -2086,8 +2246,8 @@ module CDK
       if position >= 0 && position < @list_size
         # Adjust the list
         @item = @item[0...position] + @item[position+1..-1]
-        @item_len = @item[0...position] + @item[position+1..-1]
-        @item_pos = @item[0...position] + @item[position+1..-1]
+        @item_len = @item_len[0...position] + @item_len[position+1..-1]
+        @item_pos = @item_pos[0...position] + @item_pos[position+1..-1]
 
         self.setViewSize(@list_size - 1)
 
@@ -2104,13 +2264,15 @@ module CDK
       end
     end
     
-    def focusCDKScroll
+    def focus
       self.drawCDKScrollCurrent
+      @list_win.touchwin
       @list_win.wrefresh
     end
 
-    def unfocusCDKScroll
+    def unfocus
       self.drawCDKScrollCurrent
+      @list_win.touchwin
       @list_win.wrefresh
     end
 
@@ -2119,11 +2281,115 @@ module CDK
     end
 
     def updateViewWidth(widest)
-      @max_left_char = if @box_idth > widest then 0 else widest - self.AvailableWidth end
+      @max_left_char = if @box_width > widest then 0 else widest - self.AvailableWidth end
     end
 
     def WidestItem
       @max_left_char + self.AvailableWidth
+    end
+
+    def KEY_UP
+      if @list_size > 0
+        if @current_item > 0
+          if @current_high == 0
+            if @current_top != 0
+              @current_top -= 1
+              @current_item -= 1
+            else
+              CDK.Beep
+            end
+          else
+            @current_item -= 1
+            @current_high -= 1
+          end
+        else
+          CDK.Beep
+        end
+      else
+        CDK.Beep
+      end
+    end
+
+    def KEY_DOWN
+      if @list_size > 0
+        if @current_item < @list_size - 1
+          if @current_high == @view_size - 1
+            if @current_top < @max_top_item
+              @current_top += 1
+              @current_item += 1
+            else
+              CDK.Beep
+            end
+          else
+            @current_item += 1
+            @current_high += 1
+          end
+        else
+          CDK.Beep
+        end
+      else
+        CDK.Beep
+      end
+    end
+
+    def KEY_LEFT
+      if @list_size > 0
+        if @left_char == 0
+          CDK.Beep
+        else
+          @left_char -= 1
+        end
+      else
+        CDK.Beep
+      end
+    end
+
+    def KEY_RIGHT
+      if @list_size > 0
+        if @left_char >= @max_left_char
+          CDK.Beep
+        else
+          @left_char += 1
+        end
+      else
+        CDK.Beep
+      end
+    end
+
+    def KEY_PPAGE
+      if @list_size > 0
+        if @current_top > 0
+          if @current_top >= @view_size - 1
+            @current_top -= @view_size - 1
+            @current_item -= @view_size - 1
+          else
+            self.KEY_HOME
+          end
+        else
+          CDK.Beep
+        end
+      else
+        CDK.Beep
+      end
+    end
+
+    def KEY_NPAGE
+      if @list_size > 0
+        if @current_top < @max_top_item
+          if @current_top + @view_size - 1 <= @max_top_item
+            @current_top += @view_size - 1
+            @current_item += @view_size - 1
+          else
+            @current_top = @max_top_item
+            @current_item = @last_item
+            @current_high = @view_size - 1
+          end
+        else
+          CDK.Beep
+        end
+      else
+        CDK.Beep
+      end
     end
 
     def KEY_HOME
@@ -2132,11 +2398,22 @@ module CDK
       @current_high = 0
     end
 
-    def setCDKScrollPosition(item)
-      self.SetPosition(item)
+    def KEY_END
+      if @max_top_item == -1
+        @current_top = 0
+        @current_item = @last_item - 1
+      else
+        @current_top = @max_top_item
+        @current_item = @last_item
+      end
+      @current_high = @view_size - 1
     end
 
-    def SetPosition(item)
+    def setCDKScrollPosition(item)
+      self.setPosition(item)
+    end
+
+    def setPosition(item)
       if item <= 0
         self.KEY_HOME
       elsif item > @list_size - 1
@@ -2161,7 +2438,7 @@ module CDK
       @view_size = self.maxViewSize
       @list_size = list_size
       @last_item = list_size - 1
-      @max_top_item = list_size - view_size
+      @max_top_item = list_size - @view_size
 
       if list_size < @view_size
         @view_size = list_size
