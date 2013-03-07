@@ -1222,6 +1222,29 @@ module CDK
       screen.refresh
     end
 
+    # This pops up a dialog box.
+    def popupDialog(mesg, mesg_count, buttons, button_count)
+      # Create the dialog box.
+      popup = CDK::DIALOG.new(screen, CDK::CENTER, CDK::CENTER,
+          mesg, mesg_count, buttons, button_count, Ncurses::A_REVERSE,
+          true, true, false)
+
+      # Activate the dialog box
+      popup.draw(true)
+
+      # Get the choice
+      choice = popup.activate([])
+
+      # Destroy the dialog box
+      popup.destroy
+
+      # Clean the screen.
+      screen.erase
+      screen.refresh
+
+      return choice
+    end
+
     # This calls SCREEN.refresh, (made consistent with widgets)
     def draw
       self.refresh
