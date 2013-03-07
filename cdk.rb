@@ -33,6 +33,10 @@ module CDK
   def CDK.CTRL(c)
     c.ord & 0x1f
   end
+
+  VERSION_MAJOR = 0
+  VERSION_MINOR = 2
+  VERSION_PATCH = 0
   
   CDK_PATHMAX = 256
   
@@ -667,11 +671,11 @@ module CDK
     xpos = []
     ypos = []
     window.getbegyx(ypos, xpos)
-    if window.setbegyx(ypos[0], xpos[0]) != Ncurses::ERR
-      xpos += xdiff
-      ypos += ydiff
+    if window.mvwin(ypos[0], xpos[0]) != Ncurses::ERR
+      xpos[0] += xdiff
+      ypos[0] += ydiff
       window.werase
-      window.setbegyx(ypos, xpos)
+      window.mvwin(ypos[0], xpos[0])
     else
       CDK.Beep
     end
@@ -691,6 +695,11 @@ module CDK
 
   def CDK.KEY_F(n)
     264 + n
+  end
+
+  def CDK.Version
+    return "%d.%d - %d" %
+        [CDK::VERSION_MAJOR, CDK::VERSION_MINOR, CDK::VERSION_PATCH]
   end
 
   class CDKOBJS
@@ -1018,6 +1027,95 @@ module CDK
       end
 
       return result
+    end
+
+    # This allows the user to use the cursor keys to adjust the
+    # postion of the widget.
+    def position(win)
+      parent = @screen.window
+      orig_x = win.getbegx
+      orig_y = win.getbegy
+      beg_x = parent.getbegx
+      beg_y = parent.getbegy
+      end_x = beg_x + @screen.window.getmaxx
+      end_y = beg_y + @screen.window.getmaxy
+
+      # Let them move the widget around until they hit return.
+      while !([CDK::KEY_RETURN, Ncurses::KEY_ENTER].include?(
+          key = self.getch([])))
+        case key
+        when Ncurses::KEY_UP, '8'.ord
+          if win.getbegy > beg_y
+            self.move(0, -1, true, true)
+          else
+            CDK.Beep
+          end
+        when Ncurses::KEY_DOWN, '2'.ord
+          if (win.getbegy + win.getmaxy) < end_y
+            self.move(0, 1, true, true)
+          else
+            CDK.Beep
+          end
+        when Ncurses::KEY_LEFT, '4'.ord
+          if win.getbegx > beg_x
+            self.move(-1, 0, true, true)
+          else
+            CDK.Beep
+          end
+        when Ncurses::KEY_RIGHT, '6'.ord
+          if (win.getbegx + win.getmaxx) < end_x
+            self.move(1, 0, true, true)
+          else
+            CDK.Beep
+          end
+        when '7'.ord
+          if win.getbegy > beg_y && win.getbegx > beg_x
+            self.move(-1, -1, true, true)
+          else
+            CDK.Beep
+          end
+        when '9'.ord
+          if (win.getbegx + win.getmaxx) < end_x && win.getbegy > beg_y
+            self.move(1, -1, true, true)
+          else
+            CDK.Beep
+          end
+        when '1'.ord
+          if win.getbegx > beg_x && (win.getbegy + win.getmaxy) < end_y
+            self.move(-1, 1, true, true)
+          else
+            CDK.Beep
+          end
+        when '3'.ord
+          if (win.getbegx + win.getmaxx) < end_x &&
+              (win.getbegy + win.getmaxy) < end_y
+            self.move(1, 1, true, true)
+          else
+            CDK.Beep
+          end
+        when '5'.ord
+          self.move(CDK::CENTER, CDK::CENTER, false, true)
+        when 't'.ord
+          self.move(win.getbegx, CDK::TOP, false, true)
+        when 'b'.ord
+          self.move(win.getbegx, CDK::BOTTOM, false, true)
+        when 'l'.ord
+          self.move(CDK::LEFT, win.getbegy, false, true)
+        when 'r'.ord
+          self.move(CDK::RIGHT, win.getbegy, false, true)
+        when 'c'.ord
+          self.move(CDK::CENTER, win.getbegy, false, true)
+        when 'C'.ord
+          self.move(win.getbegx, CDK::CENTER, false, true)
+        when CDK::REFRESH
+          @screen.erase
+          @screen.refresh
+        when CDK::KEY_ESC
+          self.move(orig_x, orig_y, false, true)
+        else
+          CDK.Beep
+        end
+      end
     end
 #  CDKOBJS struct values copied below for reference convenience
 
@@ -1486,6 +1584,10 @@ module CDK
       :LABEL
     end
 
+    def position
+      super(@win)
+    end
+
     # This sets the background attribute of the widget.
     def setBKattr(attrib)
       @win.wbkgd(attrib)
@@ -1752,6 +1854,10 @@ module CDK
 
     def object_type
       :SCROLL
+    end
+
+    def position
+      super(@win)
     end
 
     # Put the cursor on the currently-selected item's row.
@@ -2702,6 +2808,10 @@ module CDK
       :MARQUEE
     end
 
+    def position
+      super(@win)
+    end
+
     def getBox
       return @box
     end
@@ -3530,6 +3640,10 @@ module CDK
     def object_type
       :BUTTONBOX
     end
+
+    def position
+      super(@win)
+    end
   end
 
   class ENTRY < CDK::CDKOBJS
@@ -4118,6 +4232,10 @@ module CDK
       @field_win.wrefresh
     end
 
+    def position
+      super(@win)
+    end
+
     def object_type
       :ENTRY
     end
@@ -4496,6 +4614,10 @@ module CDK
 
     def object_type
       :DIALOG
+    end
+
+    def position
+      super(@win)
     end
   end
 
