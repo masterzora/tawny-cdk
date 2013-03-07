@@ -1167,7 +1167,8 @@ module CDK
     # This 'brings' a CDK object to the top of the stack.
     def self.raiseCDKObject(cdktype, object)
       if object.validObjType(cdktype)
-        object.screen.swapCDKIndices(object.screen_index, object.screen.object_count - 1)
+        screen = object.screen
+        screen.swapCDKIndices(object.screen_index, screen.object_count - 1)
       end
     end
 
