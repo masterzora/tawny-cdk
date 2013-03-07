@@ -9,7 +9,7 @@ class LabelExample < Example
     param.y_value = CDK::CENTER
     param.box = true
     param.shadow = true
-    super(opts,param)
+    super(opts, param)
   end
 
   # This program demonstrates the Cdk label widget.
