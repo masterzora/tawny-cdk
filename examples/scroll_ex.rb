@@ -20,7 +20,7 @@ class ScrollExample < CLIExample
     params.h_value = 10
     params.w_value = 50
     params.c = false
-    params.s_value = CDK::RIGHT
+    params.spos = CDK::RIGHT
     params.title = "<C></5>Pick a file"
 
     super(opts, params)
@@ -64,7 +64,7 @@ class ScrollExample < CLIExample
 
     # Create the scrolling list.
     scroll_list = CDK::SCROLL.new(cdkscreen,
-        params.x_value, params.y_value, params.s_value,
+        params.x_value, params.y_value, params.spos,
         params.h_value, params.w_value, params.title,
         if params.c then nil else item end,
         if params.c then 0 else count end,
