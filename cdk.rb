@@ -461,6 +461,7 @@ module CDK
                   if CDK.digit?(string[from])
                     adjust = (adjust * 10) + string[from].to_i
                   end
+                  from += 1
                 end
               end
             end
