@@ -29,6 +29,10 @@ require 'ncurses'
 
 module CDK
   # some useful global values
+
+  def CDK.CTRL(c)
+    c.ord & 0x1f
+  end
   
   CDK_PATHMAX = 256
   
@@ -52,23 +56,22 @@ module CDK
   MAX_ITEMS = 2000
   MAX_BUTTONS = 200
 
-  REFRESH = 'L'.ord & 0x1f
-  PASTE = 'V'.ord & 0x1f
-  COPY = 'Y'.ord & 0x1f
-  ERASE = 'U'.ord & 0x1f
-  CUT = 'X'.ord & 0x1f
-  BEGOFLINE = 'A'.ord & 0x1f
-  ENDOFLINE = 'E'.ord & 0x1f
-  BACKCHAR = 'B'.ord & 0x1f
-  FORCHAR = 'F'.ord & 0x1f
-  TRANSPOSE = 'T'.ord & 0x1f
-  NEXT = 'N'.ord & 0x1f
-  PREV = 'P'.ord & 0x1f
+  REFRESH = CDK.CTRL('L')
+  PASTE = CDK.CTRL('V')
+  COPY = CDK.CTRL('Y')
+  ERASE = CDK.CTRL('U')
+  CUT = CDK.CTRL('X')
+  BEGOFLINE = CDK.CTRL('A')
+  ENDOFLINE = CDK.CTRL('E')
+  BACKCHAR = CDK.CTRL('B')
+  FORCHAR = CDK.CTRL('F')
+  TRANSPOSE = CDK.CTRL('T')
+  NEXT = CDK.CTRL('N')
+  PREV = CDK.CTRL('P')
   DELETE = "\177".ord
   KEY_ESC = "\033".ord
   KEY_RETURN = "\012".ord
   KEY_TAB = "\t".ord
-
 
   ALL_SCREENS = []
   ALL_OBJECTS = []
@@ -685,10 +688,16 @@ module CDK
     c >= 0 && c < Ncurses::KEY_MIN
   end
 
+  def CDK.KEY_F(n)
+    264 + n
+  end
+
   class CDKOBJS
     attr_accessor :screen_index, :screen, :has_focus, :is_visible, :box
     attr_accessor :ULChar, :URChar, :LLChar, :LRChar, :HZChar, :VTChar, :BXAttr
-    attr_reader :binding_list
+    attr_reader :binding_list, :accepts_focus
+
+    @@g_paste_buffer = ''
 
     def initialize
       @has_focus = true
@@ -708,6 +717,8 @@ module CDK
       # set default exit-types
       @exit_type = :NEVER_ACTIVATED
       @early_exit = :NEVER_ACTIVATED
+
+      @accepts_focus = false
 
       # Bound functions
       @binding_list = {}
@@ -731,38 +742,65 @@ module CDK
       n + @border_size + @title_lines
     end
 
+    def draw(a)
+    end
+
+    def erase
+    end
+
+    def move(a,b,c,d)
+    end
+
+    def inject(a)
+    end
+
+    def focus
+    end
+
+    def unfocus
+    end
+
+    def saveData
+    end
+
+    def refreshData
+    end
+
+    def destroy
+    end
+
     # Set the object's upper-left-corner line-drawing character.
-    def setCdkULchar(ch)
+    def setULchar(ch)
       @ULChar = ch
     end
 
     # Set the object's upper-right-corner line-drawing character.
-    def setCdkURchar(ch)
+    def setURchar(ch)
       @URChar = ch
     end
 
     # Set the object's lower-left-corner line-drawing character.
-    def setCdkLLchar(ch)
+    def setLLchar(ch)
       @LLChar = ch
     end
 
     # Set the object's upper-right-corner line-drawing character.
-    def setCdkLRchar(ch)
+    def setLRchar(ch)
       @LRChar = ch
     end
 
     # Set the object's horizontal line-drawing character
-    def setCdkHZchar(ch)
+    def setHZchar(ch)
       @HZChar = ch
     end
 
     # Set the object's vertical line-drawing character
-    def setCdkVTchar(ch)
+    def setVTchar(ch)
       @VTChar = ch
     end
 
     # Set the object's box-attributes.
-    def setCdkBXattr(ch)
+    def setBXattr(ch)
       @BXAttr = ch
     end
 
@@ -781,7 +819,7 @@ module CDK
     end
 
     # Set the widget's title.
-    def setCdkTitle (title, box_width)
+    def setTitle (title, box_width)
       if !title.nil? 
         temp = title.split("\n")
         @title_lines = temp.size
@@ -817,7 +855,7 @@ module CDK
     end
 
     # Draw the widget's title
-    def drawCdkTitle(win)
+    def drawTitle(win)
       (0...@title_lines).each do |x|
         Draw.writeChtype(@win, @title_pos[x] + @border_size,
             x + @border_size, @title[x], CDK::HORIZONTAL, 0,
@@ -826,7 +864,7 @@ module CDK
     end
 
     # Remove storage for the widget's title.
-    def cleanCdkTitle
+    def cleanTitle
       @title_lines = ''
     end
 
@@ -997,11 +1035,6 @@ module CDK
 #   /* events */
 #   EExitType    exitType;
 #   EExitType    earlyExit;
-#   /* pre/post-processing */
-#   PROCESSFN    preProcessFunction;
-#   void *       preProcessData;
-#   PROCESSFN    postProcessFunction;
-#   void *       postProcessData;
 
 #  CDKFUNCS functions pasted below for reference convenience
 #   EObjectType  objectType;
@@ -1030,6 +1063,12 @@ module CDK
 
   class SCREEN
     attr_accessor :object_focus, :object_count, :object_limit, :object, :window
+    attr_accessor :exit_status
+
+    NOEXIT = 0
+    EXITOK = 1
+    EXITCANCEL = 2
+
     def initialize (window)
       # initialization for the first time
       if CDK::ALL_SCREENS.size == 0
@@ -1047,12 +1086,7 @@ module CDK
       @object_limit = 2
       @object = Array.new(@object_limit, nil)
       @window = window
-    end
-
-    def destroy
-      # TODO Let Ruby take care of memory management, please
-      # This is currently just kept for ease of porting.
-      # It should be deleted at nearest convenience
+      @object_focus = 0
     end
 
     # This registers a CDK object with a screen.
@@ -1095,7 +1129,7 @@ module CDK
             # Update the object-focus
             if screen.object_focus == index
               screen.object_focus -= 1
-              screen.setCDKFocusNext
+              Traverse.setCDKFocusNext(screen)
             elsif screen.object_focus > index
               screen.object_focus -= 1
             end
@@ -1616,7 +1650,7 @@ module CDK
       # otherwise the width will be the given width
       box_width = CDK.setWidgetDimension(parent_width, width, 0)
     
-      box_width = self.setCdkTitle(title, box_width)
+      box_width = self.setTitle(title, box_width)
 
       # Set the box height.
       if @title_lines > box_height
@@ -1773,14 +1807,10 @@ module CDK
       self.drawCDKScrollList(@box)
 
       #Check if there is a pre-process function to be called.
-      # if (PreProcessFuncOf (widget) != 0)
-      # {
-      #   /* Call the pre-process function. */
-      #   ppReturn = PreProcessFuncOf (widget) (vSCROLL,
-      #                                         widget,
-      #                                         PreProcessDataOf (widget),
-      #                                         input);
-      # }
+      unless @pre_process_func.nil?
+        pp_return = @pre_process_func.call(:SCROLL, widget,
+            @pre_process_data, input)
+      end
 
       # Should we continue?
       if pp_return != 0
@@ -1816,7 +1846,7 @@ module CDK
           when Ncurses::ERR
             self.setExitType(input)
             complete = true
-          when REFRESH
+          when CDK::REFRESH
             @screen.erase
             @screen.refresh
           when CDK::KEY_TAB, Ncurses::KEY_ENTER, CDK::KEY_RETURN
@@ -1825,15 +1855,10 @@ module CDK
             complete = true
           end
         end
-        
-        # Should we call a post-process?
-        # if (!complete && (PostProcessFuncOf (widget) != 0))
-        # {
-        #   PostProcessFuncOf (widget) (vSCROLL,
-        #                               widget,
-        #                               PostProcessDataOf (widget),
-        #                               input);
-        # }
+
+        if !complete && !(@post_process_func.nil?)
+          @post_process_func.call(:SCROLL, widget, @post_process_data, input)
+        end
       end
 
       if !complete
@@ -1926,7 +1951,7 @@ module CDK
         Draw.drawShadow(@shadow_win)
       end
 
-      self.drawCdkTitle(@win)
+      self.drawTitle(@win)
 
       # Draw in the scrolling list items.
       self.drawCDKScrollList(box)
@@ -2725,6 +2750,1378 @@ module CDK
     end
   end
 
+  class BUTTON < CDK::CDKOBJS
+    def initialize(cdkscreen, xplace, yplace, text, callback, box, shadow)
+      super()
+      parent_width = cdkscreen.window.getmaxx
+      parent_height = cdkscreen.window.getmaxy
+      box_width = 0
+      xpos = xplace
+      ypos = yplace
+
+      self.setBox(box)
+      box_height = 1 + 2 * @border_size
+
+      # Translate the string to a chtype array.
+      info_len = []
+      info_pos = []
+      @info = CDK.char2Chtype(text, info_len, info_pos)
+      @info_len = info_len[0]
+      @info_pos = info_pos[0]
+      box_width = [box_width, @info_len].max + 2 * @border_size
+
+      # Create the string alignments.
+      @info_pos = CDK.justifyString(box_width - 2 * @border_size,
+          @info_len, @info_pos)
+
+      # Make sure we didn't extend beyond the dimensions of the window.
+      box_width = if box_width > parent_width
+                  then parent_width
+                  else box_width
+                  end
+      box_height = if box_height > parent_height
+                   then parent_height
+                   else box_height
+                   end
+
+      # Rejustify the x and y positions if we need to.
+      xtmp = [xpos]
+      ytmp = [ypos]
+      CDK.alignxy(cdkscreen.window xtmp, ytmp, box_width, box_height)
+      xpos = xtmp[0]
+      ypos = ytmp[0]
+
+      # Create the button.
+      @screen = cdkscreen
+      # ObjOf (button)->fn = &my_funcs;
+      @parent = cdkscreen.window
+      @win = Ncurses::WINDOW.new(box_height, box_width, ypos, xpos)
+      @shadow_win = nil
+      @xpos = xpos
+      @ypos = ypos
+      @box_width = box_width
+      @box_height = box_height
+      @callback = callback
+      @input_window = @win
+      @accepts_focus = true
+      @shadow = shadow
+
+      if @win.nil?
+        self.destroy
+        return nil
+      end
+
+      @win.keypad(true)
+
+      # If a shadow was requested, then create the shadow window.
+      if shadow
+        @shadow_win = Ncurses::WINDOW.new(box_height, box_width,
+            ypos + 1, xpos + 1)
+      end
+
+      # Register this baby.
+      cdkscreen.register(:BUTTON, self)
+    end
+
+    # This was added for the builder.
+    def activate(actions)
+      self.draw(@box)
+      ret = -1
+
+      if actions.nil? || actions.size == 0
+        while true
+          input = self.getch([])
+
+          # Inject the character into the widget.
+          ret = self.inject(input)
+          if @exit_type != :EARLY_EXIT
+            return ret
+          end
+        end
+      else
+        # Inject each character one at a time.
+        actions.each do |x|
+          ret = self.inject(action)
+          if @exit_type == :EARLY_EXIT
+            return ret
+          end
+        end
+      end
+
+      # Set the exit type and exit
+      self.setExitType(0)
+      return -1
+    end
+
+    # This sets multiple attributes of the widget.
+    def set(mesg, box)
+      self.setMessage(mesg)
+      self.setBox(box)
+    end
+
+    # This sets the information within the button.
+    def setMessage(info)
+      info_len = []
+      info_pos = []
+      @info = CDK.char2Chtype(info, info_len, info_pos)
+      @info_len = info_len[0]
+      @info_pos = CDK.justifyString(@box_width - 2 * @border_size,
+          info_pos[0])
+
+      # Redraw the button widget.
+      self.erase
+      self.draw(box)
+    end
+
+    def getMessage
+      return @info
+    end
+
+    # This sets the box flag for the button widget
+    def setBox(box)
+      @box = box
+      @borer_size = if box then 1 else 0 end
+    end
+
+    def getBox
+      return @box
+    end
+
+    # This sets the background attribute of the widget.
+    def setBKattr(attrib)
+      @win.wbkgd(attrib)
+    end
+
+    def drawText
+      box_width = @box_width
+
+      # Draw in the message.
+      (0...(box_width - 2 * @border_size)).each do |i|
+        pos = @info_pos
+        len = @info_len
+        if i >= pos && (i - pos) < len
+          c = @info[i - pos]
+        else
+          c = ' '
+        end
+
+        if @has_focus
+          c = Ncurses::A_REVERSE | c
+        end
+
+        @win.mvwaddch(@border_size, i + @border_size, c)
+      end
+    end
+
+    # This draws the button widget
+    def draw(box)
+      # Is there a shadow?
+      unless @shadow_win.nil?
+        Draw.drawShadow(@shadow_win)
+      end
+
+      # Box the widget if asked.
+      if @box
+        Draw.drawObjBox(@win, self)
+      end
+      self.drawText
+      @win.wrefresh
+    end
+
+    # This erases the button widget.
+    def erase
+      if self.validCDKObject
+        CDK.eraseCursesWindow(@win)
+        CDK.eraseCursesWindow(@shadow_win)
+      end
+    end
+
+    # This moves the button field to the given location.
+    def move(xplace, yplace, relative, refresh_flag)
+      current_x = @win.getbegx
+      current_y = @win.getbegy
+      xpos = xplace
+      ypos = yplace
+
+      # If this is a relative move, then we will adjust where we want
+      # to move to.
+      if relative
+        xpos = @win.getbegx + xplace
+        ypos = @win.getbegy + yplace
+      end
+
+      # Adjust the window if we need to.
+      xtmp = [xpos]
+      ytmp = [ypos]
+      CDK.alignxy(@screen.window, xtmp, ytmp, @box_width, @box_height)
+      xpos = xtmp[0]
+      ypos = ytmp[0]
+
+      # Get the difference
+      xdiff = current_x - xpos
+      ydiff = current_y - ypos
+
+      # Move the window to the new location.
+      CDK.moveCursesWindow(@win, -xdiff, -ydiff)
+      CDK.moveCursesWindow(@shadow_win, -xdiff, -ydiff)
+
+      # Thouch the windows so they 'move'.
+      CDK::SCREEN.refreshCDKWindow(@screen.window)
+
+      # Redraw the window, if they asked for it.
+      if refresh_flag
+        self.draw(@box)
+      end
+    end
+
+    # This allows the user to use the cursor keys to adjust the
+    # position of the widget.
+    def position
+      # Declare some variables
+      orig_x = @win.getbegx
+      orig_y = @win.getbegy
+      key = 0
+
+      # Let them move the widget around until they hit return
+      while key != Ncurses::KEY_ENTER && key != CDK::KEY_RETURN
+        key = self.getch([])
+        if key == Ncurses::KEY_UP || key == '8'.ord
+          if @win.getbegy > 0
+            self.move(0, -1, true, true)
+          else
+            CDK.Beep
+          end
+        elsif key == Ncurses::KEY_DOWN || key == '2'.ord
+          if @win.getbegy + @win.getmaxy < @screen.window.getmaxy - 1
+            self.move(0, 1, true, true)
+          else
+            CDK.Beep
+          end
+        elsif key == Ncurses::KEY_LEFT || key == '4'.ord
+          if @win.getbegx > 0
+            self.move(-1, 0, true, true)
+          else
+            CDK.Beep
+          end
+        elsif key == Ncurses::KEY_RIGHT || key == '6'.ord
+          if @win.getbegx + @win.getmaxx < @screen.window.getmaxx - 1
+            self.move(1, 0, true, true)
+          else
+            CDK.Beep
+          end
+        elsif key == '7'.ord
+          if @win.getbegy > 0 && @win.getbegx > 0
+            self.move(-1, -1, true, true)
+          else
+            CDK.Beep
+          end
+        elsif key == '9'.ord
+          if @win.getbegx + @win.getmaxx < @screen.window.getmaxx - 1 &&
+              @win.getbegy > 0
+            self.move(1, -1, true, true)
+          else
+            CDK.Beep
+          end
+        elsif key == '1'.ord
+          if @win.getbegx > 0 &&
+              @win.getbegx + @win.getmaxx < @screen.window.getmaxx - 1
+            self.move(-1, 1, true, true)
+          else
+            CDK.Beep
+          end
+        elsif key == '3'.ord
+          if @win.getbegx + @win.getmaxx < @screen.window.getmaxx - 1 &&
+              @win.getbegy + @win.getmaxy < @screen.window.getmaxy - 1
+            self.move(1, 1, true, true)
+          else
+            CDK.Beep
+          end
+        elsif key == '5'.ord
+          self.move(CDK::CENTER, CDK::CENTER, false, true)
+        elsif key == 't'.ord
+          self.move(@win.getbegx, CDK::TOP, false, true)
+        elsif key == 'b'.ord
+          self.move(@win.getbegx, CDK::BOTTOM, false, true)
+        elsif key == 'l'.ord
+          self.move(CDK::LEFT, @win.getbegy, false, true)
+        elsif key == 'r'
+          self.move(CDK::RIGHT, @win.getbegy, false, true)
+        elsif key == 'c'
+          self.move(CDK::CENTER, @win.getbegy, false, true)
+        elsif key == 'C'
+          self.move(@win.getbegx, CDK::CENTER, false, true)
+        elsif key == CDK::REFRESH
+          @screen.erase
+          @screen.refresh
+        elsif key == CDK::KEY_ESC
+          self.move(orig_x, orig_y, false, true)
+        elsif key != CDK::KEY_RETURN && key != Ncurses::KEY_ENTER
+          CDK.Beep
+        end
+      end
+    end
+
+    # This destroys the button object pointer.
+    def destroy
+      CDK.deleteCursesWindow(@shadow_win)
+      CDK.deleteCursesWindow(@win)
+
+      self.cleanBindings(:BUTTON)
+
+      CDK::SCREEN.unregister(:BUTTON, self)
+    end
+
+    # This injects a single character into the widget.
+    def inject(input)
+      ret = -1
+      complete = false
+
+      self.setExitType(0)
+
+      # Check a predefined binding.
+      if self.checkBind(:BUTTON, input)
+        complete = true
+      else
+        case input
+        when CDK::KEY_ESC
+          self.setExitType(input)
+          complete = true
+        when Ncurses::ERR
+          self.setExitType(input)
+          complete = true
+        when ' '.ord, CDK::KEY_RETURN, Ncurses::KEY_ENTER
+          unless @callback.nil?
+            @callback.call(self)
+          end
+          self.setExitType(Ncurses::KEY_ENTER)
+          ret = 0
+          complete = true
+        when CDK::REFRESH
+          @screen.erase
+          @screen.refresh
+        else
+          CDK.Beep
+        end
+      end
+
+      unless complete
+        self.setExitType(0)
+      end
+
+      @result_data = ret
+      return ret
+    end
+
+    def focus
+      self.drawTest
+      @win.wrefresh
+    end
+
+    def unfocus
+      self.drawText
+      @win.wrefresh
+    end
+
+    def object_type
+      :BUTTON
+    end
+  end
+
+  class BUTTONBOX < CDK::CDKOBJS
+    attr_reader :current_button
+
+    def initialize(cdkscreen, x_pos, y_pos, height, width, title, rows, cols,
+        buttons, button_count, highlight, box, shadow)
+      super()
+      parent_width = cdkscreen.window.getmaxx
+      parent_height = cdkscreen.window.getmaxy
+      col_width = 0
+      current_button = 0
+      @button = []
+      @button_len = []
+      @button_pos = []
+      @column_widths = []
+
+      if button_count <= 0
+        self.destroy
+        return nil
+      end
+
+      self.setBox(box)
+
+      # Set some default values for the widget.
+      @row_adjust = 0
+      @col_adjust = 0
+
+      # If the height is a negative value, the height will be
+      # ROWS-height, otherwise the height will be the given height.
+      box_height = CDK.setWidgetDimension(parent_height, height, rows + 1)
+
+      # If the width is a negative value, the width will be
+      # COLS-width, otherwise the width will be the given width.
+      box_width = CDK.setWidgetDimension(parent_width, width, 0)
+
+      box_width = self.setTitle(title, box_width)
+
+      # Translate the buttons string to a chtype array
+      (0...button_count).each do |x|
+        button_len = []
+        @button << CDK.char2Chtype(buttons[x], button_len ,[]) 
+        @button_len << button_len[0]
+      end
+
+      # Set the button positions.
+      (0...cols).each do |x|
+        max_col_width = -2**31
+
+        # Look for the widest item in this column.
+        (0...rows).each do |y|
+          if current_button < button_count
+            max_col_width = [@button_len[current_button], max_col_width].max
+            current_button += 1
+          end
+        end
+
+        # Keep the maximum column width for this column.
+        @column_widths << max_col_width
+        col_width += max_col_width
+      end
+      box_width += 1
+
+      # Make sure we didn't extend beyond the dimensions of the window.
+      box_width = if box_width > parent_width
+                  then parent_width
+                  else box_width
+                  end
+      box_height = if box_height > parent_height
+                   then parent_height
+                   else box_height
+                   end
+
+      # Now we have to readjust the x and y positions
+      xtmp = [x_pos]
+      ytmp = [y_pos]
+      CDK.alignxy(cdkscreen.window, xtmp, ytmp, box_width, box_height)
+      xpos = xtmp[0]
+      ypos = ytmp[0]
+
+      # Set up the buttonbox box attributes.
+      @screen = cdkscreen
+      @parent = cdkscreen.window
+      @win = Ncurses::WINDOW.new(box_height, box_width, ypos, xpos)
+      @shadow_win = nil
+      @button_count = button_count
+      @current_button = 0
+      @rows = rows
+      @cols = if button_count < cols then button_count else cols end
+      @box_height = box_height
+      @box_width = box_width
+      @highlight = highlight
+      @accepts_focus = true
+      @input_window = @win
+      @shadow = shadow
+      @button_attrib = Ncurses::A_NORMAL
+
+      # Set up the row adjustment.
+      if box_height - rows - @title_lines > 0
+        @row_adjust = (box_height - rows - @title_lines) / @rows
+      end
+
+      # Set the col adjustment
+      if box_width - col_width > 0
+        @col_adjust = ((box_width - col_width) / @cols) - 1
+      end
+
+      # If we couldn't create the window, we should return a null value.
+      if @win.nil?
+        self.destroy
+        return nil
+      end
+
+      # Was there a shadow?
+      if shadow
+        @shadow_win = Ncurses::WINDOW.new(box_height, box_width,
+            ypos + 1, xpos + 1)
+      end
+
+      # Register this baby.
+      cdkscreen.register(:BUTTONBOX, self)
+    end
+
+    # This activates the widget.
+    def activate(actions)
+      input = 0
+
+      # Draw the buttonbox box.
+      self.draw(@box)
+
+      if actions.nil? || actions.size == 0
+        while true
+          input = self.getch([])
+
+          # Inject the characer into the widget.
+          ret = self.inject(input)
+          if @exit_type != :EARLY_EXIT
+            return ret
+          end
+        end
+      else
+        # Inject each character one at a time.
+        actions.each do |action|
+          ret = self.inject(action)
+          if @exit_type != :EARLY_EXIT
+            return ret
+          end
+        end
+      end
+
+      # Set the exit type and exit
+      self.setExitType(0)
+      return -1
+    end
+
+    # This injects a single character into the widget.
+    def inject(input)
+      first_button = 0
+      last_button = @button_count - 1
+      pp_return = 1
+      ret = -1
+      complete = false
+
+      # Set the exit type
+      self.setExitType(0)
+
+      unless @pre_process_func.nil?
+        pp_return = @pre_process_func.call(:BUTTONBOX, widget,
+            @pre_process_data, input)
+      end
+
+      # Should we continue?
+      if pp_return != 0
+        # Check for a key binding.
+        if self.checkBind(:BUTTONBOX, input)
+          complete = true
+        else
+          case input
+          when Ncurses::KEY_LEFT, Ncurses::KEY_BTAB, Ncurses::KEY_BACKSPACE
+            if @current_button - @rows < first_button
+              @current_button = last_button
+            else
+              @current_button -= @rows
+            end
+          when Ncurses::KEY_RIGHT, CDK::KEY_TAB, ' '.ord
+            if @current_button + @rows > last_button
+              @current_button = first_button
+            else
+              @current_button += @rows
+            end
+          when Ncurses::KEY_UP
+            if @current_button -1 < first_button
+              @current_button = last_button
+            else
+              @current_button -= 1
+            end
+          when Ncurses::KEY_DOWN
+            if @current_button + 1 > last_button
+              @current_button = first_button
+            else
+              @current_button += 1
+            end
+          when CDK::REFRESH
+            @screen.erase
+            @screen.refresh
+          when CDK::KEY_ESC
+            self.setExitType(input)
+            complete = true
+          when Ncurses::ERR
+            self.setExitType(input)
+            complete = true
+          when CDK::KEY_RETURN, Ncurses::KEY_ENTER
+            self.setExitType(input)
+            ret = @current_button
+            complete = true
+          end
+        end
+
+        if !complete && !(@post_process_func.nil?)
+          @post_process_func.call(:BUTTONBOX, widget, @post_process_data,
+              input)
+        end
+
+      end
+        
+      unless complete
+        self.drawButtons
+        self.setExitType(0)
+      end
+
+      @result_data = ret
+      return ret
+    end
+
+    # This sets multiple attributes of the widget.
+    def set(highlight, box)
+      self.setHighlight(highlight)
+      self.setBox(box)
+    end
+
+    # This sets the highlight attribute for the buttonboxes
+    def setHighlight(highlight)
+      @highlight = highlight
+    end
+
+    def getHighlight
+      return @highlight
+    end
+
+    # This sets the box attribute of the widget.
+    def setBox(box)
+      @box = box
+      @border_size = if box then 1 else 0 end
+    end
+
+    def getBox
+      return @box
+    end
+
+    # This sets th background attribute of the widget.
+    def setBKattr(attrib)
+      @win.wbkgd(attrib)
+    end
+
+    # This draws the buttonbox box widget.
+    def draw(box)
+      # Is there a shadow?
+      unless @shadow_win.nil?
+        Draw.drawShadow(@shadow_win)
+      end
+
+      # Box the widget if they asked.
+      if box
+        Draw.drawObjBox(@win, self)
+      end
+
+      # Draw in the title if there is one.
+      self.drawTitle(@win)
+
+      # Draw in the buttons.
+      self.drawButtons
+    end
+
+    # This draws the buttons on the button box widget.
+    def drawButtons
+      row = @title_lines + 1
+      col = @col_adjust / 2
+      current_button = 0
+      cur_row = -1
+      cur_col = -1
+
+      # Draw the buttons.
+      while current_button < @button_count
+        (0...@cols).each do |x|
+          row = @title_lines + @border_size
+
+          (0...@rows).each do |y|
+            attr = @button_attrib
+            if current_button == @current_button
+              attr = @highlight
+              cur_row = row
+              cur_col = col
+            end
+            Draw.writeChtypeAttrib(@win, col, row,
+                @button[current_button], attr, CDK::HORIZONTAL, 0,
+                @button_len[current_button])
+            row += (1 + @row_adjust)
+            current_button += 1
+          end
+          col += @column_widths[x] + @col_adjust + @border_size
+        end
+      end
+
+      if cur_row >= 0 && cur_col >= 0
+        @win.wmove(cur_row, cur_col)
+      end
+      @win.wrefresh
+    end
+
+    # This erases the buttonbox box from the screen.
+    def erase
+      if self.validCDKObject
+        CDK.eraseCursesWindow(@win)
+        CDK.eraseCursesWindow(@shadow_win)
+      end
+    end
+
+    # This moves the buttonbox box to a new screen location.
+    def move(xplace, yplace, relative, refresh_flag)
+      current_x = @win.getbegx
+      current_y = @win.getbegy
+      xpos = xplace
+      ypos = yplace
+      xdiff = 0
+      ydiff = 0
+
+      # If this a relative move, then we will adjust where we want
+      # to move to.
+      if relative
+        xpos = @win.getbegx + xplace
+        ypos = @win.getbegy + yplace
+      end
+
+      # Adjust the window if we need to.
+      xtmp = [xpos]
+      ytmp = [ypos]
+      CDK.alignxy(@screen.window, xtmp, ytmp, @box_width, @box_height)
+      xpos = xtmp[0]
+      ypos = ytmp[0]
+
+      # Get the difference.
+      xdiff = current_x - xpos
+      ydiff = current_y - ypos
+
+      # Move the window to the new location.
+      CDK.moveCursesWindow(@win, -xdiff, -ydiff)
+      CDK.moveCursesWindow(@shadow_win, -xdiff, -ydiff)
+
+      # Touch the windows so they 'move'.
+      CDK::SCREEN.refreshCDKWindow(@screen.window)
+
+      # Redraw the window, if they asked for it.
+      if refresh_flag
+        self.draw(@box)
+      end
+    end
+
+    # This destroys the widget
+    def destroy
+      self.cleanTitle
+
+      CDK.deleteCursesWindow(@shadow_win)
+      CDK.deleteCursesWindow(@win)
+
+      self.cleanBindings(:BUTTONBOX)
+
+      CDK::SCREEN.unregister(:BUTTONBOX, self)
+    end
+
+    def setCurrentButton(button)
+      if button >= 0 && button < @button_count
+        @current_button = button
+      end
+    end
+
+    def getCurrentButton
+      @current_button
+    end
+
+    def getButtonCount
+      @button_count
+    end
+
+    def focus
+      self.draw(@box)
+    end
+
+    def unfocus
+      self.draw(@box)
+    end
+
+    def object_type
+      :BUTTONBOX
+    end
+  end
+
+  class ENTRY < CDK::CDKOBJS
+    attr_accessor :info, :left_char, :screen_col
+    attr_reader :win, :box_height, :box_width, :max, :field_width
+
+    def initialize(cdkscreen, xplace, yplace, title, label, field_attr, filler,
+        disp_type, f_width, min, max, box, shadow)
+      super()
+      parent_width = cdkscreen.window.getmaxx
+      parent_height = cdkscreen.window.getmaxy
+      field_width = f_width
+      box_width = 0
+      xpos = xplace
+      ypos = yplace
+      
+      self.setBox(box)
+      box_height = @border_size * 2 + 1
+
+      # If the field_width is a negative value, the field_width will be
+      # COLS-field_width, otherwise the field_width will be the given width.
+      field_width = CDK.setWidgetDimension(parent_width, field_width, 0)
+      box_width = field_width + 2 * @border_size
+
+      # Set some basic values of the entry field.
+      @label = 0
+      @label_len = 0
+      @label_win = 0
+
+      # Translate the label string to a chtype array
+      if !(label.nil?) && label.size > 0
+        label_len = [@label_len]
+        @label = CDK.char2Chtype(label, label_len, [])
+        @label_len = label_len[0]
+        box_width += @label_len
+      end
+
+      old_width = box_width
+      box_width = self.setTitle(title, box_width)
+      horizontal_adjust = (box_width - old_width) / 2
+
+      box_height += @title_lines
+
+      # Make sure we didn't extend beyond the dimensinos of the window.
+      box_width = [box_width, parent_width].min
+      box_height = [box_height, parent_height].min
+      field_width = [field_width,
+          box_width - @label_len - 2 * @border_size].min
+
+      # Rejustify the x and y positions if we need to.
+      xtmp = [xpos]
+      ytmp = [ypos]
+      CDK.alignxy(cdkscreen.window, xtmp, ytmp, box_width, box_height)
+      xpos = xtmp[0]
+      ypos = ytmp[0]
+
+      # Make the label window.
+      @win = cdkscreen.window.subwin(box_height, box_width, ypos, xpos)
+      if @win.nil?
+        self.destroy
+        return nil
+      end
+      @win.keypad(true)
+
+      # Make the field window.
+      @field_win = @win.subwin(1, field_width,
+          ypos + @title_lines + @border_size,
+          xpos + @label_len + horizontal_adjust + @border_size)
+
+      if @field_win.nil?
+        self.destroy
+        return nil
+      end
+      @field_win.keypad(true)
+
+      # make the label win, if we need to
+      if !(label.nil?) && label.size > 0
+        @label_win = @win.subwin(1, @label_len,
+            ypos + @title_lines + @border_size,
+            xpos + horizontal_adjust + @border_size)
+      end
+
+      # cleanChar (entry->info, max + 3, '\0');
+      @info = ''
+      @info_width = max + 3
+
+      # Set up the rest of the structure.
+      @screen = cdkscreen
+      @parent = cdkscreen.window
+      @shadow_win = nil
+      @field_attr = field_attr
+      @field_width = field_width
+      @filler = filler
+      @hidden = filler
+      @input_window = @field_win
+      @accepts_focus = true
+      @data_ptr = nil
+      @shadow = shadow
+      @screen_col = 0
+      @left_char = 0
+      @min = min
+      @max = max
+      @box_width = box_width
+      @box_height = box_height
+      @disp_type = disp_type
+      @callbackfn = lambda do |entry, character|
+        plainchar = Display.filterByDisplayType(entry, character)
+
+        if plainchar == Ncurses::ERR || entry.info.size >= entry.max
+          CDK.Beep
+        else
+          # Update the screen and pointer
+          if entry.screen_col != entry.field_width - 1
+            front = (entry.info[0...(entry.screen_col + entry.left_char)] or '')
+            back = (entry.info[(entry.screen_col + entry.left_char)..-1] or '')
+            entry.info = front + plainchar.chr + back
+            entry.screen_col += 1
+          else
+            # Update the character pointer.
+            entry.info << plainchar
+            # Do not update the pointer if it's the last character
+            if entry.info.size < entry.max
+              entry.left_char += 1
+            end
+          end
+
+          # Update the entry field.
+          entry.drawField
+        end
+      end
+
+      # Do we want a shadow?
+      if shadow
+        @shadow_win = cdkscreen.window.subwin(box_height, box_width,
+            ypos + 1, xpos + 1)
+      end
+
+      cdkscreen.register(:ENTRY, self)
+    end
+
+    # This means you want to use the given entry field. It takes input
+    # from the keyboard, and when it's done, it fills the entry info
+    # element of the structure with what was typed.
+    def activate(actions)
+      input = 0
+      ret = 0
+
+      # Draw the widget.
+      self.draw(@box)
+
+      if actions.nil? or actions.size == 0
+        while true
+          input = self.getch([])
+
+          # Inject the character into the widget.
+          ret = self.inject(input)
+          if @exit_type != :EARLY_EXIT
+            return ret
+          end
+        end
+      else
+        # Inject each character one at a time.
+        actions.each do |action|
+          ret = self.inject(action)
+          if @exit_type != :EARLY_EXIT
+            return ret
+          end
+        end
+      end
+
+      # Make sure we return the correct info.
+      if @exit_type == :NORMAL
+        return @info
+      else
+        return 0
+      end
+    end
+
+    def setPositionToEnd
+      if @info.size >= @field_width
+        if @info.size < @max
+          char_count = @field_width - 1
+          @left_char = @info.size - char_count
+          @screen_col = char_count
+        else
+          @left_char = @info.size - @field_width
+          @screen_col = @info.size - 1
+        end
+      else
+        @left_char = 0
+        @screen_col = @info.size
+      end
+    end
+
+    # This injects a single character into the widget.
+    def inject(input)
+      pp_return = 1
+      ret = 1
+      complete = false
+
+      # Set the exit type
+      self.setExitType(0)
+      
+      # Refresh the widget field.
+      self.drawField
+
+      unless @pre_process_func.nil?
+        pp_return = @pre_process_func.call(:ENTRY, widget,
+            @pre_process_data, input)
+      end
+
+      # Should we continue?
+      if pp_return != 0
+        # Check a predefined binding
+        if self.checkBind(:ENTRY, input)
+          complete = true
+        else
+          curr_pos = @screen_col + @left_char
+
+          case input
+          when Ncurses::KEY_UP, Ncurses::KEY_DOWN
+            CDK.Beep
+          when Ncurses::KEY_HOME
+            @left_char = 0
+            @screen_col = 0
+            self.drawField
+          when CDK::TRANSPOSE
+            if curr_pos >= info_length - 1
+              CDK.Beep
+            else
+              holder = @info[curr_pos]
+              @info[curr_pos] = @info[curr_pos + 1]
+              @info[curr_pos + 1] = holder
+              self.drawField
+            end
+          when Ncurses::KEY_END
+            self.setPositionToEnd
+            self.drawField
+          when Ncurses::KEY_LEFT
+            if curr_pos <= 0
+              CDK.Beep
+            elsif @screen_col == 0
+              # Scroll left.
+              @left_char -= 1
+              self.drawField
+            else
+              @screen_col -= 1
+              @field_win.wmove(0, @screen_col)
+            end
+          when Ncurses::KEY_RIGHT
+            if curr_pos >= @info.size
+              CDK.Beep
+            elsif @screen_col == @field_width - 1
+              # Scroll to the right.
+              @left_char += 1
+              self.drawField
+            else
+              # Move right.
+              @screen_col += 1
+              @field_win.wmove(0, @screen_col)
+            end
+          when Ncurses::KEY_BACKSPACE, Ncurses::KEY_DC
+            if @disp_type == :VIEWONLY
+              CDK.Beep
+            else
+              success = false
+              if input == Ncurses::KEY_BACKSPACE
+                curr_pos -= 1
+              end
+
+              if curr_pos >= 0 && @info.size > 0
+                if curr_pos < @info.size
+                  @info = @info[0...curr_pos] + @info[curr_pos+1..-1]
+                  success = true
+                elsif input == Ncurses::KEY_BACKSPACE
+                  @info = @info[0...-1]
+                  success = true
+                end
+              end
+              
+              if success
+                if input == Ncurses::KEY_BACKSPACE
+                  if @screen_col > 0
+                    @screen_col -= 1
+                  else
+                    @left_char -= 1
+                  end
+                end
+                self.drawField
+              else
+                CDK.Beep
+              end
+            end
+          when CDK::KEY_ESC
+            self.setExitType(input)
+            complete = true
+          when CDK::ERASE
+            if @info.size != 0
+              self.clean
+              self.drawField
+            end
+          when CDK::CUT
+            if @info.size != 0
+              @@g_paste_buffer = @info.clone
+              self.clean
+              self.drawField
+            else
+              CDK.Beep
+            end
+          when CDK::COPY
+            if @info.size != 0
+              @@g_paste_buffer = @info.clone
+            else
+              CDK.Beep
+            end
+          when CDK::PASTE
+            if @@g_paste_buffer != 0
+              self.setValue(@@g_paste_buffer)
+              self.drawField
+            else
+              CDK.Beep
+            end
+          when CDK::KEY_TAB, CDK::KEY_RETURN, Ncurses::KEY_ENTER
+            if @info.size >= @min
+              self.setExitType(input)
+              ret = @info
+              complete = true
+            else
+              CDK.Beep
+            end
+          when Ncurses::ERR
+            self.setExitType(input)
+            complete = true
+          when CDK::REFRESH
+            @screen.erase
+            @screen.refresh
+          else
+            @callbackfn.call(self, input)
+          end
+        end
+
+        if !complete && !(@post_process_func.nil?)
+          @post_process_func.call(:ENTRY, widget, @post_process_data, input)
+        end
+      end
+
+      unless complete
+        self.setExitType(0)
+      end
+
+      @result_data = ret
+      return ret
+    end
+
+    # This moves the entry field to the given location.
+    def move(xplace, yplace, relative, refresh_flag)
+      current_x = @win.getbegx
+      current_y = @win.getbegy
+      xpos = xplace
+      ypos = yplace
+
+      # If this is a relative move, then we will adjust where we want
+      # to move to.
+      if relative
+        xpos = @win.getbegx + xplace
+        ypos = @win.getbegy + yplace
+      end
+
+      # Adjust the window if we need to
+      xtmp = [xpos]
+      ytmp = [ypos]
+      CDK.alignxy(@screen.window, xtmp, ytmp, @box_width, @box_height)
+      xpos = xtmp[0]
+      ypos = ytmp[0]
+
+      # Get the difference.
+      xdiff = current_x - xpos
+      ydiff = current_y - ypos
+
+      # Move the window to the new location.
+      CDK.moveCursesWindow(@win, -xdiff, -ydiff)
+      CDK.moveCursesWindow(@field_win, -xdiff, -ydiff)
+      CDK.moveCursesWindow(@label_win, -xdiff, -ydiff)
+      CDK.moveCursesWindow(@shadow_win, -xdiff, -ydiff)
+
+      # Touch the windows so they 'move'
+      CDK::SCREEN.refreshCDKWindow(@screen.window)
+
+      # Redraw the window, if they asked for it
+      if refresh_flag
+        self.draw(@box)
+      end
+    end
+    
+    # This erases the information in the entry field and redraws
+    # a clean and empty entry field.
+    def clean
+      width = @field_width
+
+      @info = ''
+
+      # Clean the entry screen field.
+      @field_win.mvwhline(0, 0, @filler, width)
+
+      # Reset some variables
+      @screen_col = 0
+      @left_char = 0
+
+      # Refresh the entry field.
+      @field_win.wrefresh
+    end
+
+    # This draws the entry field.
+    def draw(box)
+      # Did we ask for a shadow?
+      unless @shadow_win.nil?
+        Draw.drawShadow(@shadow_win)
+      end
+
+      # Box the widget if asked.
+      if box
+        Draw.drawObjBox(@win, self)
+      end
+
+      self.drawTitle(@win)
+
+      @win.wrefresh
+
+      # Draw in the label to the widget.
+      unless @label_win.nil?
+        Draw.writeChtype(@label_win, 0, 0, @label, CDK::HORIZONTAL, 0,
+            @label_len)
+        @label_win.wrefresh
+      end
+
+      self.drawField
+    end
+
+    def drawField
+      # Draw in the filler characters.
+      @field_win.mvwhline(0, 0, @filler.ord, @field_width)
+
+      # If there is information in the field then draw it in.
+      if !(@info.nil?) && @info.size > 0
+        # Redraw the field.
+        if Display.isHiddenDisplayType(@disp_type)
+          (@left_char...@info.size).each do |x|
+            @field_win.mvwaddch(0, x - @left_char, @hidden)
+          end
+        else
+          (@left_char...@info.size).each do |x|
+            @field_win.mvwaddch(0, x - @left_char, @info[x].ord | @field_attr)
+          end
+        end
+        @field_win.wmove(0, @screen_col)
+      end
+
+      @field_win.wrefresh
+    end
+
+    # This erases an entry widget from the screen.
+    def erase
+      if this.validCDKObject
+        CDK.eraseCursesWindow(@field_win)
+        CDK.eraseCursesWindow(@label_win)
+        CDK.eraseCursesWindow(@win)
+        CDK.eraseCursesWindow(@shadow_win)
+      end
+    end
+
+    # This destroys an entry widget.
+    def destroy
+      self.cleanTitle
+
+      CDK.deleteCursesWindow(@field_win)
+      CDK.deleteCursesWindow(@label_win)
+      CDK.deleteCursesWindow(@shadow_win)
+      CDK.deleteCursesWindow(@win)
+
+      self.cleanBindings(:ENTRY)
+
+      CDK::SCREEN.unregister(:ENTRY, self)
+    end
+
+    # This sets specific attributes of the entry field.
+    def set(value, min, max, box)
+      self.setValue(value)
+      self.setMin(min)
+      self.setMax(max)
+    end
+
+    # This removes the old information in the entry field and keeps
+    # the new information given.
+    def setValue(new_value)
+      if new_value.nil?
+        @info = ''
+
+        @left_char = 0
+        @screen_col = 0
+      else
+        @info = new_value.clone
+
+        self.setPositionToEnd
+      end
+    end
+
+    def getValue
+      return @info
+    end
+
+    # This sets the maximum length of the string that will be accepted
+    def setMax(max)
+      @max = max
+    end
+
+    def getMax
+      @max
+    end
+
+    # This sets the minimum length of the string that will be accepted.
+    def setMin(min)
+      @min = min
+    end
+
+    def getMin
+      @min
+    end
+
+    # This sets the filler character to be used in the entry field.
+    def setFillerChar(filler_char)
+      @filler = filler_char
+    end
+
+    def getFillerChar
+      @filler
+    end
+
+    # This sets the character to use when a hidden type is used.
+    def setHiddenChar(hidden_characer)
+      @hidden = hidden_character
+    end
+
+    def getHiddenChar
+      @hidden
+    end
+
+    # This sets the widget's box attribute
+    def setBox(box)
+      @box = box
+      @border_size = if box then 1 else 0 end
+    end
+
+    def getBox
+      @box
+    end
+
+    # This sets the background attribute of the widget.
+    def setBKattr(attrib)
+      @win.wbkgd(attrib)
+      @field_win.wbkgd(attrib)
+      unless @label_win.nil?
+        @label_win.wbkgd(attrib)
+      end
+    end
+
+    # This sets the attribute of the entry field.
+    def setHighlight(highlight, cursor)
+      @field_win.wbkgd(highlight)
+      @field_attr = highlight
+      Ncurses.curs_set(cursor)
+      # FIXME(original) - if (cursor) { move the cursor to this widget }
+    end
+
+    # This sets the entry field callback function.
+    def setCB(callback)
+      @callbackfn = callback
+    end
+
+    def focus
+      @field_win.wmove(0, @screen_col)
+      @field_win.wrefresh
+    end
+
+    def unfocus
+      self.draw(box)
+      @field_win.wrefresh
+    end
+
+    def object_type
+      :ENTRY
+    end
+  end
+
   module Draw
     # This sets up a basic set of color pairs. These can be redefined if wanted
     def Draw.initCDKColor
@@ -2991,7 +4388,8 @@ module CDK
       case type
       when :HCHAR, :HINT, :HMIXED, :LHCHAR, :LHMIXED, :UHCHAR, :UHMIXED
         true
-      when :CHAR, :INT, :INVALID, :LCHAR, :LMIXED, :MIXED, :UCHAR, :UMIXED, :VIEWONLY
+      when :CHAR, :INT, :INVALID, :LCHAR, :LMIXED, :MIXED, :UCHAR,
+          :UMIXED, :VIEWONLY
         false
       end
     end
@@ -3015,6 +4413,287 @@ module CDK
       end
 
       return result
+    end
+  end
+
+  module Traverse
+    def Traverse.resetCDKScreen(screen)
+      refreshDataCDKScreen(screen)
+    end
+
+    def Traverse.exitOKCDKScreen(screen)
+      screen.exit_status = CDK::SCREEN::EXITOK
+    end
+
+    def Traverse.exitCancelCDKScreen(screen)
+      screen.exit_status = CDK::SCREEN::EXITCANCEL
+    end
+
+    def Traverse.exitOKCDKScrenOf(obj)
+      exitOKCDKScreen(obj.screen)
+    end
+
+    def Traverse.exitCancelCDKScreenOf(obj)
+      exitCancelCDKScreen(obj.screen)
+    end
+
+    def Traverse.resetCDKScreenOf(obj)
+      resetCDKScreen(obj.screen)
+    end
+
+    # Returns the objects on which the focus lies.
+    def Traverse.getCDKFocusCurrent(screen)
+      result = nil
+      n = screen.object_focus
+
+      if n >= 0 && n < screen.object_count
+        result = screen.object[n]
+      end
+
+      return result
+    end
+
+    # Set focus to the next object, returning it.
+    def Traverse.setCDKFocusNext(screen)
+      result = nil
+      curobj = nil
+      n = getFocusIndex(screen)
+      first = n
+      
+      while true
+        n+= 1
+        if n >= screen.object_count
+          n = 0
+        end
+        curobj = screen.object[n]
+        if !(curobj.nil?) && curobj.accepts_focus
+          result = curobj
+          break
+        else
+          if n == first
+            break
+          end
+        end
+      end
+
+      setFocusIndex(screen, if !(result.nil?) then n else -1 end)
+      return result
+    end
+
+    # Set focus to the previous object, returning it.
+    def Traverse.setCDKFocusPrevious(screen)
+      result = nil
+      curobj = nil
+      n = getFocusIndex(screen)
+      first = n
+
+      while true
+        n -= 1
+        if n < 0
+          n = screen.object_count - 1
+        end
+        curobj = screen.object[n]
+        if !(curobj.nil?) && curobj.accepts_focus
+          result = curobj
+          break
+        elsif n == first
+          break
+        end
+      end
+
+      setFocusIndex(screen, if !(result.nil?) then n else -1 end)
+      return result
+    end
+
+    # Set focus to a specific object, returning it.
+    # If the object cannot be found, return nil.
+    def Traverse.setCDKFocusCurrent(screen, newobj)
+      result = nil
+      curobj = nil
+      n = getFocusIndex(screen)
+      first = n
+
+      while true
+        n += 1
+        if n >= screen.object_count
+          n = 0
+        end
+
+        curobj = screen.object[n]
+        if curobj == newobj
+          result = curobj
+          break
+        elsif n == first
+          break
+        end
+      end
+
+      setFocusIndex(screen, if !(result.nil?) then n else -1 end)
+      return result
+    end
+
+    # Set focus to the first object in the screen.
+    def Traverse.setCDKFocusFirst(screen)
+      setFocusIndex(screen, screen.object_count - 1)
+      return switchFocus(setCDKFocusNext(screen), nil)
+    end
+
+    # Set focus to the last object in the screen.
+    def Traverse.setCDKFocusLast(screen)
+      setFocusIndex(screen, 0)
+      return switchFocus(setCDKFocusPrevious(screen), nil)
+    end
+
+    def Traverse.traverseCDKOnce(screen, curobj, key_code,
+        function_key, func_menu_key)
+      case key_code
+      when Ncurses::KEY_BTAB
+        switchFocus(setCDKFocusPrevious(screen), curobj)
+      when Ncurses::KEY_TAB
+        switchFocus(setCDKFocusNext(screen), curobj)
+      when CDK.KEY_F(10)
+        # save data and exit
+        exitOKCDKScreen(screen)
+      when CDK.CTRL('X')
+        exitCancelCDKScreen(screen)
+      when CDK.CTRL('R')
+        # reset data to defaults
+        resetCDKScreen(screen)
+        setFocus(curobj)
+      when CDK::REFRESH
+        # redraw screen
+        refreshCDKScreen(screen)
+        setFocus(curobj)
+      else
+        # note veryone wants menus, so we make them optional here
+        # if (funcMenuKey != 0 && funcMenuKey (keyCode, functionKey))
+        # {
+        #   /* find and enable drop down menu */
+        #   int j;
+        #
+        #   for (j = 0; j < screen->objectCount; ++j)
+        #     if (ObjTypeOf (screen->object[j]) == vMENU)
+        #     {
+        #       handleMenu (screen, screen->object[j], curobj);
+        #       break;
+        #     }
+        # }
+        # else
+        # {
+        #   InjectObj (curobj, (chtype)keyCode);
+        # }
+      end
+    end
+
+    # Traverse the widgets on a screen.
+    def Traverse.traverseCDKScreen(screen)
+      result = 0
+      curobj = setCDKFocusFirst(screen)
+
+      unless curobj.nil?
+        refreshDataCDKScreen(screen)
+
+        screen.exit_status = CDK::SCREEN::NOEXIT
+
+        while !((curobj = getCDKFocusCurrent(screen)).nil?) &&
+            screen.exit_status == CDK::SCREEN::NOEXIT
+          function = []
+          key = curobj.getch(function)
+
+          # traverseCDKOnce (screen, curobj, key, function, checkMenuKey);
+        end
+
+        if screen.exit_status == CDK::SCREEN::EXITOK
+          saveDataCDKScreen(screen)
+          result = 1
+        end
+      end
+      return result
+    end
+
+    private
+
+    def Traverse.limitFocusIndex(screen, value)
+      if value >= screen.object_count || value < 0
+        0
+      else
+        value
+      end
+    end
+
+    def Traverse.getFocusIndex(screen)
+      return limitFocusIndex(screen, screen.object_focus)
+    end
+
+    def Traverse.setFocusIndex(screen, value)
+      screen.object_focus = limitFocusIndex(screen, value)
+    end
+
+    def Traverse.unsetFocus(obj)
+      Ncurses.curs_set(0)
+      unless obj.nil?
+        obj.has_focus = false
+        obj.unfocus
+      end
+    end
+
+    def Traverse.setFocus(obj)
+      unless obj.nil?
+        obj.has_focus = true
+        obj.focus
+      end
+      Ncurses.curs_set(1)
+    end
+
+    def Traverse.switchFocus(newobj, oldobj)
+      if oldobj != newobj
+        oldobj.unsetFocus
+        newobj.setFocus
+      end
+      return newobj
+    end
+
+    def Traverse.checkMenuKey(key_code, function_key)
+      key_code == CDK::KEY_ESC && !function_key
+    end
+
+    def Traverse.handleMenu(screen, menu, oldobj)
+      done = false
+
+      switchFocus(menu, oldobj)
+      while !done
+        key = menu.getch([])
+
+        case key
+        when CDK::KEY_TAB
+          done = true
+        when CDK::KEY_ESC
+          # cleanup the menu
+          menu.inject(key)
+          done = true
+        else
+          done = menu.inject(key)
+        end
+      end
+
+      # if ((newobj = getCDKFocusCurrent (screen)) == 0)
+      #   newobj = setCDKFocusNext (screen);
+
+      return switchFocus(newobj, menu)
+    end
+
+    # Save data in widgets on a screen
+    def Traverse.saveDataCDKScreen(screen)
+      screen.object.each do |object|
+        # SaveDataObj (screen->object[i])
+      end
+    end
+
+    # Refresh data in widgets on a screen
+    def Traverse.refreshDataCDKScreen(screen)
+      screen.object.each do |object|
+        # RefreshDataObj (screen->object[i]);
+      end
     end
   end
 end
