@@ -1151,15 +1151,15 @@ module CDK
 
     def swapCDKIndices(n1, n2)
       if n1 != n2 && self.validIndex(n1) && self.validIndex(n2)
-        o1 = screen.object[n1]
-        o2 = screen.object[n2]
-        self.setScreenIndex(screen, n1, o2)
+        o1 = self.object[n1]
+        o2 = self.object[n2]
+        self.setScreenIndex(n1, o2)
         self.setScreenIndex(n2, o1)
 
-        if screen.object_focus == n1
-          screen.object_focus = n2
-        elsif screen.object_focus == n2
-          screen.object_focus = n1
+        if @object_focus == n1
+          @object_focus = n2
+        elsif @object_focus == n2
+          @object_focus = n1
         end
       end
     end
