@@ -390,61 +390,61 @@ module CDK
             when 'L'
               case string[from + 1]
               when 'L'
-                last_char = Ncurses.ACS_LLCORNER
+                last_char = Ncurses::ACS_LLCORNER
               when 'U'
-                last_char = Ncurses.ACS_ULCORNER
+                last_char = Ncurses::ACS_ULCORNER
               when 'H'
-                last_char = Ncurses.ACS_HLINE
+                last_char = Ncurses::ACS_HLINE
               when 'V'
-                last_char = Ncurses.ACS_VLINE
+                last_char = Ncurses::ACS_VLINE
               when 'P'
-                last_char = Ncurses.ACS_PLUS
+                last_char = Ncurses::ACS_PLUS
               end
             when 'R'
               case string[from + 1]
               when 'L'
-                last_char = Ncurses.ACS_LRCORNER
+                last_char = Ncurses::ACS_LRCORNER
               when 'U'
-                last_char = Ncurses.ACS_URCORNER
+                last_char = Ncurses::ACS_URCORNER
               end
             when 'T'
               case string[from + 1]
               when 'T'
-                last_char = Ncurses.ACS_TTEE
+                last_char = Ncurses::ACS_TTEE
               when 'R'
-                last_char = Ncurses.ACS_RTEE
+                last_char = Ncurses::ACS_RTEE
               when 'L'
-                last_char = Ncurses.ACS_LTEE
+                last_char = Ncurses::ACS_LTEE
               when 'B'
-                last_char = Ncurses.ACS_BTEE
+                last_char = Ncurses::ACS_BTEE
               end
             when 'A'
               case string[from + 1]
               when 'L'
-                last_char = Ncurses.ACS_LARROW
+                last_char = Ncurses::ACS_LARROW
               when 'R'
-                last_char = Ncurses.ACS_RARROW
+                last_char = Ncurses::ACS_RARROW
               when 'U'
-                last_char = Ncurses.ACS_UARROW
+                last_char = Ncurses::ACS_UARROW
               when 'D'
-                last_char = Ncurses.ACS_DARROW
+                last_char = Ncurses::ACS_DARROW
               end
             else
               case [string[from + 1], string[from + 2]]
               when ['D', 'I']
-                last_char = Ncurses.ACS_DIAMOND
+                last_char = Ncurses::ACS_DIAMOND
               when ['C', 'B']
-                last_char = Ncurses.ACS_CKBOARD
+                last_char = Ncurses::ACS_CKBOARD
               when ['D', 'G']
-                last_char = Ncurses.ACS_DEGREE
+                last_char = Ncurses::ACS_DEGREE
               when ['P', 'M']
-                last_char = Ncurses.ACS_PLMINUS
+                last_char = Ncurses::ACS_PLMINUS
               when ['B', 'U']
-                last_char = Ncurses.ACS_BULLET
+                last_char = Ncurses::ACS_BULLET
               when ['S', '1']
-                last_char = Ncurses.ACS_S1
+                last_char = Ncurses::ACS_S1
               when ['S', '9']
-                last_char = Ncurses.ACS_S9
+                last_char = Ncurses::ACS_S9
               end
             end
 
@@ -1353,21 +1353,10 @@ module CDK
       ypos = [yplace]
       x = 0
 
-      #   if (rows <= 0
-      #       || (label = newCDKObject (CDKLABEL, &my_funcs)) == 0
-      #       || (label->info = typeCallocN (chtype *, rows + 1)) == 0
-      #       || (label->infoLen = typeCallocN (int, rows + 1)) == 0
-      #       || (label->infoPos = typeCallocN (int, rows + 1)) == 0)
-      #   {
-      #      destroyCDKObject (label);
-      #      return (0);
-      #   }
-
       if rows <= 0
-        return 0
+        return nil
       end
 
-      #setCDKLabelBox (label, Box)
       self.setBox(box)
       box_height = rows + 2 * @border_size
 
@@ -1419,9 +1408,8 @@ module CDK
       @shadow = shadow
 
       if @win.nil?
-        #destroyCDKObject (label);
-        #return (0);
-        return
+        self.destroy
+        return nil
       end
 
       @win.keypad(true)
@@ -1434,9 +1422,6 @@ module CDK
 
       # Register this
       cdkscreen.register(:LABEL, self)
-      #
-      # Return the label pointer
-      # return (label);
     end
 
     # This was added for the builder.
@@ -1476,10 +1461,8 @@ module CDK
       end
 
       # Redraw the label widget.
-      # eraseCDKLabel (label);
-      # drawCDKLabel (label, ObjOf (label)->box;
       self.erase
-      self.draw(box)
+      self.draw(@box)
     end
 
     def getMessage(size)
@@ -1502,7 +1485,7 @@ module CDK
     end
 
     # This sets the background attribute of the widget.
-    def setBKattrLabel(attrib)
+    def setBKattr(attrib)
       @win.wbkgd(attrib)
     end
 
@@ -1537,7 +1520,7 @@ module CDK
     end
 
     # This moves the label field to the given location
-    def moveCDKLabel(xplace, yplace, relative, refresh_flag)
+    def move(xplace, yplace, relative, refresh_flag)
       current_x = @win.getbegx
       current_y = @win.getbegy
       xpos = [xplace]
@@ -1573,7 +1556,6 @@ module CDK
     end
 
     # This destroys the label object pointer.
-    # static void _destroyCDKLabel (CDKOBJS *object)
     def destroy
       CDK.deleteCursesWindow(@shadow_win)
       CDK.deleteCursesWindow(@win)
@@ -1599,12 +1581,6 @@ module CDK
       end
       return code
     end
-
-    # dummyInject (Label)
-    # dummyFocus (Label)
-    # dummyUnfocus (Label)
-    # dummyRefreshData (Label)
-    # dummySaveData (Label)
   end
 
   class SCROLL < CDK::CDKOBJS
