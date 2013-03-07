@@ -55,7 +55,7 @@ class EntryExample < Example
     directory.set(arg, 0, 256, true)
 
     # Activate the entry field.
-    info = directory.activate([])
+    info = directory.activate('')
 
     # Tell them what they typed.
     if directory.exit_type == :ESCAPE_HIT

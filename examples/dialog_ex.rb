@@ -51,7 +51,7 @@ class DialogExample < Example
     end
 
     # Activate the dialog box.
-    selection = question.activate([])
+    selection = question.activate('')
 
     # Tell them what was selected.
     if question.exit_type == :ESCAPE_HIT

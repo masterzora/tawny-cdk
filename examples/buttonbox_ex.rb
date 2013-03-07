@@ -57,7 +57,7 @@ class ButtonboxExample < Example
     
     # Activate the entry field.
     button_widget.draw(true)
-    info = entry.activate([])
+    info = entry.activate('')
     selection = button_widget.current_button
 
     # Clean up.

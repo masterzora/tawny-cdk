@@ -1233,7 +1233,7 @@ module CDK
       popup.draw(true)
 
       # Get the choice
-      choice = popup.activate([])
+      choice = popup.activate('')
 
       # Destroy the dialog box
       popup.destroy
@@ -4146,6 +4146,7 @@ module CDK
   end
 
   class DIALOG < CDK::CDKOBJS
+    attr_reader :current_button
     MIN_DIALOG_WIDTH = 10
 
     def initialize(cdkscreen, xplace, yplace, mesg, rows, button_label,

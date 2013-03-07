@@ -121,7 +121,7 @@ class ScrollExample < CLIExample
     
     # Activate the scrolling list.
     
-    selection = scroll_list.activate(nil)
+    selection = scroll_list.activate('')
 
     # Determine how the widget was exited
     if scroll_list.exit_type == :ESCAPE_HIT
