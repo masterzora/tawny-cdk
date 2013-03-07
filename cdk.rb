@@ -870,14 +870,14 @@ module CDK
     end
 
     # Set data for preprocessing
-    def setCDKObjectPreProcess (fn, data)
-      @pre_process_function = fn
+    def setPreProcess (fn, data)
+      @pre_process_func = fn
       @pre_process_data = data
     end
 
     # Set data for postprocessing
-    def setCDKObjectPostProcess (fn, data)
-      @post_process_function = fn
+    def setPostProcess (fn, data)
+      @post_process_func = fn
       @post_process_data = data
     end
     
@@ -1142,7 +1142,7 @@ module CDK
     def setScreenIndex(number, obj)
       obj.screen_index = number
       obj.screen = self
-      self.object[number] = obj
+      @object[number] = obj
     end
 
     def validIndex(n)
@@ -1151,8 +1151,8 @@ module CDK
 
     def swapCDKIndices(n1, n2)
       if n1 != n2 && self.validIndex(n1) && self.validIndex(n2)
-        o1 = self.object[n1]
-        o2 = self.object[n2]
+        o1 = @object[n1]
+        o2 = @object[n2]
         self.setScreenIndex(n1, o2)
         self.setScreenIndex(n2, o1)
 
@@ -1809,7 +1809,7 @@ module CDK
 
       #Check if there is a pre-process function to be called.
       unless @pre_process_func.nil?
-        pp_return = @pre_process_func.call(:SCROLL, widget,
+        pp_return = @pre_process_func.call(:SCROLL, self,
             @pre_process_data, input)
       end
 
@@ -1858,7 +1858,7 @@ module CDK
         end
 
         if !complete && !(@post_process_func.nil?)
-          @post_process_func.call(:SCROLL, widget, @post_process_data, input)
+          @post_process_func.call(:SCROLL, self, @post_process_data, input)
         end
       end
 
@@ -3293,7 +3293,7 @@ module CDK
       self.setExitType(0)
 
       unless @pre_process_func.nil?
-        pp_return = @pre_process_func.call(:BUTTONBOX, widget,
+        pp_return = @pre_process_func.call(:BUTTONBOX, self,
             @pre_process_data, input)
       end
 
@@ -3345,7 +3345,7 @@ module CDK
         end
 
         if !complete && !(@post_process_func.nil?)
-          @post_process_func.call(:BUTTONBOX, widget, @post_process_data,
+          @post_process_func.call(:BUTTONBOX, self, @post_process_data,
               input)
         end
 
@@ -3557,7 +3557,7 @@ module CDK
       # Set some basic values of the entry field.
       @label = 0
       @label_len = 0
-      @label_win = 0
+      @label_win = nil
 
       # Translate the label string to a chtype array
       if !(label.nil?) && label.size > 0
@@ -3737,7 +3737,7 @@ module CDK
       self.drawField
 
       unless @pre_process_func.nil?
-        pp_return = @pre_process_func.call(:ENTRY, widget,
+        pp_return = @pre_process_func.call(:ENTRY, self,
             @pre_process_data, input)
       end
 
@@ -3872,7 +3872,7 @@ module CDK
         end
 
         if !complete && !(@post_process_func.nil?)
-          @post_process_func.call(:ENTRY, widget, @post_process_data, input)
+          @post_process_func.call(:ENTRY, self, @post_process_data, input)
         end
       end
 
@@ -3992,7 +3992,7 @@ module CDK
 
     # This erases an entry widget from the screen.
     def erase
-      if this.validCDKObject
+      if self.validCDKObject
         CDK.eraseCursesWindow(@field_win)
         CDK.eraseCursesWindow(@label_win)
         CDK.eraseCursesWindow(@win)
