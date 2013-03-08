@@ -10,8 +10,11 @@ Currently implemented widgets:
  * ButtonBox
  * Dialog
  * Entry
+ * Graph
+ * Itemlist
  * Label
  * Marquee
+ * Menu
  * Scroll
 
 Original C project page: http://invisible-island.net/cdk/
