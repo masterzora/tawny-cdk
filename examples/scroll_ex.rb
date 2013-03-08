@@ -80,37 +80,23 @@ class ScrollExample < CLIExample
     end
 
     if params.c
-      scroll_list.setCDKScrollItems(item, count, true)
+      scroll_list.setItems(item, count, true)
     end
 
-  #def ScrollExample.addItemCB(cdktype, object, client_data, input)
-  #  object.addCDKScrollItem(ScrollExample.newLabel("add"))
-  #  object.screen.refreshCDKScreen
-  #  return true
-  #end
     addItemCB = lambda do |type, object, client_data, input|
-      object.addCDKScrollItem(ScrollExample.newLabel("add"))
-      object.screen.refresh
-      return true
-    end
-  #def ScrollExample.insItemCB(cdktype, object, client_data, input)
-  #  object.insertCDKScrollItem(ScrollExample.newLabel("insert"))
-  #  object.screen.refreshCDKScreen
-  #  return true
-  #end
-    insItemCB = lambda do |type, object, client_data, input|
-      object.insertCDKScrollItem(ScrollExample.newLabel("insert"))
+      object.addItem(ScrollExample.newLabel("add"))
       object.screen.refresh
       return true
     end
 
-  #def ScrollExample.delItemCB(cdktype, object, client_data, input)
-  #  object.deleteCDKScrollItem(object.getCDKScrollCurrent)
-  #  object.screen.refreshCDKScreen
-  #  return true
-  #end
+    insItemCB = lambda do |type, object, client_data, input|
+      object.insertItem(ScrollExample.newLabel("insert"))
+      object.screen.refresh
+      return true
+    end
+
     delItemCB = lambda do |type, object, client_data, input|
-      object.deleteCDKScrollItem(object.getCDKScrollCurrentItem)
+      object.deleteItem(object.getCurrentItem)
       object.screen.refresh
       return true
     end

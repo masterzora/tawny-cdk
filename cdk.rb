@@ -764,6 +764,15 @@ module CDK
     def inject(a)
     end
 
+    def setBox(box)
+      @box = box
+      @border_size = if @box then 1 else 0 end
+    end
+
+    def getBox
+      return @box
+    end
+
     def focus
     end
 
@@ -1117,47 +1126,6 @@ module CDK
         end
       end
     end
-#  CDKOBJS struct values copied below for reference convenience
-
-#   const CDKFUNCS * fn;
-#   int          borderSize;
-#   boolean      acceptsFocus;
-#   WINDOW *     inputWindow;
-#   void *       dataPtr;
-#   CDKDataUnion resultData;
-#   unsigned     bindingCount;
-#   /* title-drawing */
-#   chtype **    title;
-#   int *        titlePos;
-#   int *        titleLen;
-#   int          titleLines;
-#   /* events */
-#   EExitType    exitType;
-#   EExitType    earlyExit;
-
-#  CDKFUNCS functions pasted below for reference convenience
-#   EObjectType  objectType;
-#   CDKDataType  returnType;
-#   void         (*drawObj)         (struct CDKOBJS *, boolean);
-#   void         (*eraseObj)        (struct CDKOBJS *);
-#   void         (*moveObj)         (struct CDKOBJS *, int, int, boolean, boolean);
-#   int          (*injectObj)       (struct CDKOBJS *, chtype);
-#   void         (*focusObj)        (struct CDKOBJS *);
-#   void         (*unfocusObj)      (struct CDKOBJS *);
-#   void         (*saveDataObj)     (struct CDKOBJS *);
-#   void         (*refreshDataObj)  (struct CDKOBJS *);
-#   void         (*destroyObj)      (struct CDKOBJS *);
-#   /* line-drawing */
-#   void         (*setULcharObj)    (struct CDKOBJS *, chtype);
-#   void         (*setURcharObj)    (struct CDKOBJS *, chtype);
-#   void         (*setLLcharObj)    (struct CDKOBJS *, chtype);
-#   void         (*setLRcharObj)    (struct CDKOBJS *, chtype);
-#   void         (*setVTcharObj)    (struct CDKOBJS *, chtype);
-#   void         (*setHZcharObj)    (struct CDKOBJS *, chtype);
-#   void         (*setBXattrObj)    (struct CDKOBJS *, chtype);
-#   /* background attribute */
-#   void         (*setBKattrObj)    (struct CDKOBJS *, chtype);
-
   end
 
   class SCREEN
@@ -1569,16 +1537,6 @@ module CDK
       return @info
     end
 
-    # This sets the box flag for the label widget.
-    def setBox(box)
-      @box = box
-      @border_size = if @box then 1 else 0 end
-    end
-
-    def getBox
-      return @box
-    end
-
     def object_type
       :LABEL
     end
@@ -1859,39 +1817,6 @@ module CDK
   end
 
   class SCROLL < CDK::SCROLLER
-    #struct SScroll {
-    #   WINDOW       *parent;
-    #   WINDOW       *win;
-    #   WINDOW       *scrollbarWin;
-    #   WINDOW       *listWin;
-    #   WINDOW       *shadowWin;
-    #   int          titleAdj;       /* unused */
-    #   int *        itemPos;        /* */
-    #   int *        itemLen;        /* */
-    #   int          maxTopItem;     /* */
-    #   int          maxLeftChar;    /* */
-    #   int          leftChar;       /* */
-    #   int          lastItem;       /* */
-    #   int          currentTop;     /* */
-    #   int          currentItem;    /* */
-    #   int          currentHigh;    /* */
-    #   int          listSize;       /* */
-    #   int          boxWidth;       /* */
-    #   int          boxHeight;      /* */
-    #   int          viewSize;       /* */
-    #
-    #   int          scrollbarPlacement; /* UNUSED */
-    #   boolean      scrollbar;      /* UNUSED */
-    #   int          toggleSize;     /* size of scrollbar thumb/toggle */
-    #   int          togglePos;      /* position of scrollbar thumb/toggle */
-    #   float        step;           /* increment for scrollbar */
-    #
-    #   boolean      shadow;         /* */
-    #   boolean      numbers;        /* */
-    #   chtype       titlehighlight; /* */
-    #   chtype       highlight;      /* */
-    #};
-    
     attr_reader :item
 
     def initialize (cdkscreen, xplace, yplace, splace, height, width, title,
@@ -1914,7 +1839,7 @@ module CDK
         '>'           => Ncurses::KEY_END
       }
 
-      self.setCDKScrollBox(box)
+      self.setBox(box)
 
       # If the height is a negative value, the height will be ROWS-height,
       # otherwise the height will be the given height
@@ -1999,10 +1924,10 @@ module CDK
       @input_window = @win
       @shadow = shadow
 
-      self.setCDKScrollPosition(0);
+      self.setPosition(0);
 
       # Create the scrolling list item list and needed variables.
-      if self.createCDKScrollItemList(numbers, list, list_size) <= 0
+      if self.createItemList(numbers, list, list_size) <= 0
         return nil
       end
 
@@ -2082,7 +2007,7 @@ module CDK
       self.setExitType(0)
 
       # Draw the scrolling list
-      self.drawCDKScrollList(@box)
+      self.drawList(@box)
 
       #Check if there is a pre-process function to be called.
       unless @pre_process_func.nil?
@@ -2140,7 +2065,7 @@ module CDK
       end
 
       if !complete
-        self.drawCDKScrollList(@box)
+        self.drawList(@box)
         self.setExitType(0)
       end
 
@@ -2151,25 +2076,20 @@ module CDK
       return ret
     end
 
-    # This allows the user to accelerate to a position in the scrolling list.
-    def setCDKScrollPosition(item)
-      self.setPosition(item);
-    end
-
     # Get/Set the current item number of the scroller.
-    def getCDKScrollCurrentItem
+    def getCurrentItem
       @current_item
     end
 
-    def setCDKScrollCurrentItem(item)
+    def setCurrentItem(item)
       self.setPosition(item);
     end
 
-    def getCDKScrollCurrentTop
+    def getCurrentTop
       return @current_top
     end
 
-    def setCDKScrollCurrentTop(item)
+    def setCurrentTop(item)
       if item < 0
         item = 0
       elsif item > @max_top_item
@@ -2232,10 +2152,10 @@ module CDK
       self.drawTitle(@win)
 
       # Draw in the scrolling list items.
-      self.drawCDKScrollList(box)
+      self.drawList(box)
     end
 
-    def drawCDKScrollCurrent
+    def drawCurrent
       # Rehighlight the current menu item.
       screen_pos = @item_pos[@current_item] - @left_char
       highlight = if self.has_focus
@@ -2250,7 +2170,7 @@ module CDK
           @item_len[@current_item])
     end
 
-    def drawCDKScrollList(box)
+    def drawList(box)
       # If the list is empty, don't draw anything.
       if @list_size > 0
         # Redraw the list
@@ -2274,7 +2194,7 @@ module CDK
           end
         end
 
-        self.drawCDKScrollCurrent
+        self.drawCurrent
 
         # Determine where the toggle is supposed to be.
         unless @scrollbar_win.nil?
@@ -2360,7 +2280,7 @@ module CDK
 
     # This function creates the scrolling list information and sets up the
     # needed variables for the scrolling list to work correctly.
-    def createCDKScrollItemList(numbers, list, list_size)
+    def createItemList(numbers, list, list_size)
       status = 0
       if list_size > 0
         widest_item = 0
@@ -2396,14 +2316,14 @@ module CDK
 
     # This sets certain attributes of the scrolling list.
     def set(list, list_size, numbers, highlight, box)
-      self.setCDKScrollItems(list, list_size, numbers)
-      self.setCDKScrollHighlight(highlight)
-      self.setCDKScrollBox(box)
+      self.setItems(list, list_size, numbers)
+      self.setHighlight(highlight)
+      self.setBox(box)
     end
 
     # This sets the scrolling list items
-    def setCDKScrollItems(list, list_size, numbers)
-      if self.createCDKScrollItemList(numbers, list, list_size) <= 0
+    def setItems(list, list_size, numbers)
+      if self.createItemList(numbers, list, list_size) <= 0
         return
       end
 
@@ -2413,11 +2333,11 @@ module CDK
       end
 
       self.setViewSize(list_size)
-      self.setCDKScrollPosition(0)
+      self.setPosition(0)
       @left_char = 0
     end
 
-    def getCDKScrollItems(list)
+    def getItems(list)
       (0...@list_size).each do |x|
         list << CDK.chtype2Char(@item[x])
       end
@@ -2426,18 +2346,12 @@ module CDK
     end
 
     # This sets the highlight of the scrolling list.
-    def setCDKScrollHighlight(highlight)
+    def setHighlight(highlight)
       @highlight = highlight
     end
 
-    def getCDKScrollHighlight(highlight)
+    def getHighlight(highlight)
       return @highlight
-    end
-
-    # This sets the box attribute of the scrolling list.
-    def setCDKScrollBox(box)
-      @box = box
-      @border_size = if box then 1 else 0 end
     end
 
     # Resequence the numbers after an insertion/deletion.
@@ -2471,7 +2385,7 @@ module CDK
     end
 
     # This adds a single item to a scrolling list, at the end of the list.
-    def addCDKScrollItem(item)
+    def addItem(item)
       item_number = @list_size
       widest_item = self.WidestItem
       temp = ''
@@ -2490,7 +2404,7 @@ module CDK
     end
 
     # This adds a single item to a scrolling list before the current item
-    def insertCDKScrollItem(item)
+    def insertItem(item)
       widest_item = self.WidestItem
       temp = ''
       have = 0
@@ -2510,7 +2424,7 @@ module CDK
     end
 
     # This removes a single item from a scrolling list.
-    def deleteCDKScrollItem(position)
+    def deleteItem(position)
       if position >= 0 && position < @list_size
         # Adjust the list
         @item = @item[0...position] + @item[position+1..-1]
@@ -2528,18 +2442,18 @@ module CDK
         end
 
         # do this to update the view size, etc
-        self.setCDKScrollPosition(@current_item)
+        self.setPosition(@current_item)
       end
     end
     
     def focus
-      self.drawCDKScrollCurrent
+      self.drawCurrent
       @list_win.touchwin
       @list_win.wrefresh
     end
 
     def unfocus
-      self.drawCDKScrollCurrent
+      self.drawCurrent
       @list_win.touchwin
       @list_win.wrefresh
     end
@@ -2549,15 +2463,14 @@ module CDK
     end
 
     def updateViewWidth(widest)
-      @max_left_char = if @box_width > widest then 0 else widest - self.AvailableWidth end
+      @max_left_char = if @box_width > widest
+                       then 0
+                       else widest - self.AvailableWidth
+                       end
     end
 
     def WidestItem
       @max_left_char + self.AvailableWidth
-    end
-
-    def setCDKScrollPosition(item)
-      self.setPosition(item)
     end
   end
 
@@ -2776,8 +2689,7 @@ module CDK
       xpos = if @win.nil? then 0 else @win.getbegx end
       ypos = if @win.nil? then 0 else @win.getbegy end
 
-      @box = box
-      @border_size = if box then 1 else 0 end
+      super
 
       self.layoutWidget(xpos, ypos)
     end
@@ -2788,10 +2700,6 @@ module CDK
 
     def position
       super(@win)
-    end
-
-    def getBox
-      return @box
     end
 
     # This sets the background attribute of the widget.
@@ -2964,16 +2872,6 @@ module CDK
 
     def getMessage
       return @info
-    end
-
-    # This sets the box flag for the button widget
-    def setBox(box)
-      @box = box
-      @borer_size = if box then 1 else 0 end
-    end
-
-    def getBox
-      return @box
     end
 
     # This sets the background attribute of the widget.
@@ -3461,16 +3359,6 @@ module CDK
 
     def getHighlight
       return @highlight
-    end
-
-    # This sets the box attribute of the widget.
-    def setBox(box)
-      @box = box
-      @border_size = if box then 1 else 0 end
-    end
-
-    def getBox
-      return @box
     end
 
     # This sets th background attribute of the widget.
@@ -4168,16 +4056,6 @@ module CDK
       @hidden
     end
 
-    # This sets the widget's box attribute
-    def setBox(box)
-      @box = box
-      @border_size = if box then 1 else 0 end
-    end
-
-    def getBox
-      @box
-    end
-
     # This sets the background attribute of the widget.
     def setBKattr(attrib)
       @win.wbkgd(attrib)
@@ -4540,16 +4418,6 @@ module CDK
       return @separator
     end
 
-    # This sets the box attribute of the widget.
-    def setBox(box)
-      @box = box
-      @border_size = if box then 1 else 0 end
-    end
-
-    def getBox
-      return @box
-    end
-
     # This sets the background attribute of the widget.
     def setBKattr(attrib)
       @win.wbkgd(attrib)
@@ -4867,16 +4735,6 @@ module CDK
       if refresh_flag
         self.draw(@box)
       end
-    end
-
-    # Set whether or not the graph will be boxed
-    def setBox(box)
-      @box = box
-      @border_size = if box then 1 else 0 end
-    end
-
-    def getBox
-      return @box
     end
 
     # Draw the grpah widget
@@ -5880,16 +5738,6 @@ module CDK
       return @default_item
     end
 
-    # This sets the box attribute of the itemlist widet.
-    def setBox(box)
-      @box = box
-      @border_size = if box then 1 else 0 end
-    end
-
-    def getBox
-      return @box
-    end
-
     def focus
       self.drawField(true)
     end
@@ -6456,16 +6304,6 @@ module CDK
       return @right_box_char
     end
 
-    # This sets the box attribute of the widget.
-    def setBox(box)
-      @box = box
-      @border_size = if box then 1 else 0 end
-    end
-
-    def getBox
-      return @box
-    end
-
     # This sets the current highlighted item of the widget
     def setCurrentItem(item)
       self.setPosition(item)
@@ -6857,16 +6695,6 @@ module CDK
 
     def getFillerChar
       return @filler
-    end
-
-    # Set the widget box attribute.
-    def setBox(box)
-      @box = box
-      @border_size = if box then 1 else 0 end
-    end
-
-    def getBox
-      return @box
     end
 
     # Set the background attribute of the widget.
@@ -7450,23 +7278,17 @@ module CDK
         refreshCDKScreen(screen)
         setFocus(curobj)
       else
-        # note veryone wants menus, so we make them optional here
-        # if (funcMenuKey != 0 && funcMenuKey (keyCode, functionKey))
-        # {
-        #   /* find and enable drop down menu */
-        #   int j;
-        #
-        #   for (j = 0; j < screen->objectCount; ++j)
-        #     if (ObjTypeOf (screen->object[j]) == vMENU)
-        #     {
-        #       handleMenu (screen, screen->object[j], curobj);
-        #       break;
-        #     }
-        # }
-        # else
-        # {
-        #   InjectObj (curobj, (chtype)keyCode);
-        # }
+        # not everyone wants menus, so we make them optional here
+        if !(func_menu_key.nil?) && func_menu_key.call(key_code, function_key)
+          # find and enable drop down menu
+          screen.object.each do |object|
+            if object.object_type == :MENU
+              Traverse.handleMenu(screen, object, curobj)
+            end
+          end
+        else
+          curobj.inject(key_code)
+        end
       end
     end
 
@@ -7485,7 +7307,13 @@ module CDK
           function = []
           key = curobj.getch(function)
 
-          # traverseCDKOnce (screen, curobj, key, function, checkMenuKey);
+          # TODO look at more direct way to do this
+          check_menu_key = lambda do |key_code, function_key|
+            Traverse.checkMenuKey(key_code, function_key)
+          end
+
+          Traverse.traverseCDKOnce(screen, curobj, key,
+              function[0], check_menu_key)
         end
 
         if screen.exit_status == CDK::SCREEN::EXITOK
@@ -7561,8 +7389,9 @@ module CDK
         end
       end
 
-      # if ((newobj = getCDKFocusCurrent (screen)) == 0)
-      #   newobj = setCDKFocusNext (screen);
+      if (newobj = Traverse.getCDKFocusCurrent(screen)).nil?
+        newobj = Traverse.setCDKFocusNext(screen);
+      end
 
       return switchFocus(newobj, menu)
     end
@@ -7570,14 +7399,14 @@ module CDK
     # Save data in widgets on a screen
     def Traverse.saveDataCDKScreen(screen)
       screen.object.each do |object|
-        # SaveDataObj (screen->object[i])
+        screen.object[i].saveData
       end
     end
 
     # Refresh data in widgets on a screen
     def Traverse.refreshDataCDKScreen(screen)
       screen.object.each do |object|
-        # RefreshDataObj (screen->object[i]);
+        screen.object[i].refreshData
       end
     end
   end
