@@ -15,6 +15,7 @@ Currently implemented widgets:
  * Label
  * Marquee
  * Menu
+ * Radio
  * Scroll
 
 Original C project page: http://invisible-island.net/cdk/
