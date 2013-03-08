@@ -11,6 +11,7 @@ Currently implemented widgets:
  * Dialog
  * Entry
  * Graph
+ * Histogram
  * Itemlist
  * Label
  * Marquee
