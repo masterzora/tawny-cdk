@@ -3,7 +3,7 @@ require './example'
 
 class GraphExample < CLIExample
   def GraphExample.parse_opts(opts, params)
-    opts.banner = 'Usage: scroll_ex.rb [options]'
+    opts.banner = 'Usage: graph_ex.rb [options]'
 
     # default values
     params.box = true
