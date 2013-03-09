@@ -16,6 +16,7 @@ Currently implemented widgets:
  * Label
  * Marquee
  * Menu
+ * Multiple Line Entry
  * Radio
  * Scroll
 
