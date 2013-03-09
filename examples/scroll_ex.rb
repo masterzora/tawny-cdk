@@ -73,7 +73,6 @@ class ScrollExample < CLIExample
     if scroll_list.nil?
       cdkscreen.destroyCDKScreen
       CDK::SCREEN.endCDK
-      r
 
       puts "Cannot make scrolling list.  Is the window too small?"
       exit #EXIT_FAILURE
