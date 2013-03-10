@@ -8127,6 +8127,76 @@ module CDK
     end
   end
 
+  class ALPHALIST < CDK::CDKOBJS
+    def position
+      super(@win)
+    end
+
+    def object_type
+      :ALPHALIST
+    end
+  end
+
+  class SWINDOW < CDK::CDKOBJS
+    def position
+      super(@win)
+    end
+
+    def object_type
+      :SWINDOW
+    end
+  end
+
+  class CALENDAR < CDK::CDKOBJS
+    def position
+      super(@win)
+    end
+
+    def object_type
+      :CALENDAR
+    end
+  end
+
+  class VIEWER < CDK::CDKOBJS
+    def position
+      super(@win)
+    end
+
+    def object_type
+      :VIEWER
+    end
+  end
+
+  class FSELECT < CDK::CDKOBJS
+    def position
+      super(@win)
+    end
+
+    def object_type
+      :FSELECT
+    end
+  end
+
+  class MATRIX < CDK::CDKOBJS
+    def position
+      super(@win)
+    end
+
+    def object_type
+      :MATRIX
+    end
+  end
+
+  class TEMPLATE < CDK::CDKOBJS
+    def position
+      super(@win)
+    end
+
+    def object_type
+      :TEMPLATE
+    end
+  end
+  
   module Draw
     # This sets up a basic set of color pairs. These can be redefined if wanted
     def Draw.initCDKColor
