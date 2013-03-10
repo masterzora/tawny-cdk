@@ -19,5 +19,6 @@ Currently implemented widgets:
  * Multiple Line Entry
  * Radio
  * Scroll
+ * Selection List
 
 Original C project page: http://invisible-island.net/cdk/
