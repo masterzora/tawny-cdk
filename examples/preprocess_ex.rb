@@ -38,11 +38,11 @@ class PreProcessExample < Example
         mesg << "<C>I told you </B>NOT<!B> to type G"
         mesg << "<C><#HL(30)>"
 
-        widget = CDK::DIALOG.new(entry.screen, CDK::CENTER, CDK::CENTER,
+        dialog = CDK::DIALOG.new(entry.screen, CDK::CENTER, CDK::CENTER,
             mesg, mesg.size, buttons, button_count, Ncurses::A_REVERSE,
             false, true, false)
-        widget.activate('')
-        widget.destroy
+        dialog.activate('')
+        dialog.destroy
         entry.draw(entry.box)
         return 0
       end
