@@ -8,18 +8,21 @@ Why tawny?  Because this is better than a ruby port.
 Currently implemented widgets:
  * Alphalist
  * Button
- * ButtonBox
+ * Buttonbox
  * Dialog
  * Entry
+ * File Selector
  * Graph
  * Histogram
- * Itemlist
+ * Item List
  * Label
  * Marquee
  * Menu
  * Multiple Line Entry
- * Radio
- * Scroll
+ * Radio List
+ * Scale
+ * Scrolling List
+ * Scrolling Window 
  * Selection List
 
 Original C project page: http://invisible-island.net/cdk/
