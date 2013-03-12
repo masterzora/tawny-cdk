@@ -216,7 +216,7 @@ class FselectExample < CLIExample
         button, 2, Ncurses::A_REVERSE, true, false)
 
     # Could we create the viewer widget?
-    if example.nil? || true
+    if example.nil?
       # Exit CDK.
       fselect.destroy
       cdkscreen.destroy
