@@ -16,19 +16,19 @@ class ScaleExample < Example
     super(opts, param)
 
     opts.on('-h HIGH', OptionParser::DecimalInteger, 'High value') do |h|
-      params.high = h
+      param.high = h
     end
 
     opts.on('-l LOW', OptionParser::DecimalInteger, 'Low value') do |l|
-      params.low = l
+      param.low = l
     end
 
     opts.on('-i INC', OptionParser::DecimalInteger, 'Increment amount') do |i|
-      params.inc = i
+      param.inc = i
     end
 
     opts.on('-w WIDTH', OptionParser::DecimalInteger, 'Widget width') do |w|
-      params.width = w
+      param.width = w
     end
   end
 

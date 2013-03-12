@@ -731,6 +731,97 @@ module CDK
         [CDK::VERSION_MAJOR, CDK::VERSION_MINOR, CDK::VERSION_PATCH]
   end
 
+  def CDK.getString(screen, title, label, init_value)
+    # Create the widget.
+    widget = CDK::ENTRY.new(screen, CDK::CENTER, CDK::CENTER, title, label,
+        Ncurses::A_NORMAL, '.', :MIXED, 40, 0, 5000, true, false)
+
+    # Set the default value.
+    widget.setValue(init_value)
+
+    # Get the string.
+    value = widget.activate([])
+
+    # Make sure they exited normally.
+    if widget.exit_type != :NORMAL
+      widget.destroy
+      return nil
+    end
+
+    # Return a copy of the string typed in.
+    value = entry.getValue.clone
+    widget.destroy
+    return value
+  end
+
+  # This allows a person to select a file.
+  def CDK.selectFile(screen, title)
+    # Create the file selector.
+    fselect = CDK::FSELECT.new(screen, CDK::CENTER, CDK::CENTER, -4, -20,
+        title, 'File: ', Ncurses::A_NORMAL, '_', Ncurses::A_REVERSE,
+        '</5>', '</48>', '</N>', '</N>', true, false)
+
+    # Let the user play.
+    filename = fselect.activate([])
+
+    # Check the way the user exited the selector.
+    if fselect.exit_type != :NORMAL
+      fselect.destroy
+      screen.refresh
+      return nil
+    end
+
+    # Otherwise...
+    fselect.destroy
+    screen.refresh
+    return filename
+  end
+
+  # This returns a selected value in a list
+  def CDK.getListindex(screen, title, list, list_size, numbers)
+    selected = -1
+    height = 10
+    width = -1
+    len = 0
+
+    # Determine the height of the list.
+    if list_size < 10
+      height = list_size + if title.size == 0 then 2 else 3 end
+    end
+
+    # Determine the width of the list.
+    list.each do |item|
+      width = [width, item.size + 10].max
+    end
+
+    width = [width, title.size].max
+    width += 5
+
+    # Create the scrolling list.
+    scrollp = CDK::SCROLL.new(screen, CDK::CENTER, CDK::CENTER, CDK::RIGHT,
+        height, width, title, list, list_size, numbers, Ncurses::A_REVERSE,
+        true, false)
+
+    # Check if we made the lsit.
+    if scrollp.nil?
+      screen.refresh
+      return -1
+    end
+
+    # Let the user play.
+    selected = scrollp.activate([])
+
+    # Check how they exited.
+    if scrollp.exit_type != :NORMAL
+      selected = -1
+    end
+
+    # Clean up.
+    scrollp.destroy
+    screen.refresh
+    return selected
+  end
+
   class CDKOBJS
     attr_accessor :screen_index, :screen, :has_focus, :is_visible, :box
     attr_accessor :ULChar, :URChar, :LLChar, :LRChar, :HZChar, :VTChar, :BXAttr
@@ -11105,6 +11196,33 @@ module CDK
     def object_type
       :SCALE
     end
+  end
+
+  class UScale < CDK::SCALE
+    # This may require some functionality shifts, but the original
+    # UScale handled unsigned values.  Since Ruby's typing is different
+    # this shouldn't be overly necessary but is nice for
+    # compatibility/completeness sake.
+  end
+
+  class FScale < CDK::SCALE
+    # This may require some functionality shifts, but the original
+    # FScale handled float values.  Since Ruby's typing is different
+    # this shouldn't be overly necessary but is nice for
+    # compatibility/completeness sake.
+    #
+    # That said, unlike UScale this might require a bit more reworking
+    # to account for the 'digits' parameter and allowing '.' in editing.
+  end
+
+  class DScale < CDK::SCALE
+    # This may require some functionality shifts, but the original
+    # DScale handled double values.  Since Ruby's typing is different
+    # this shouldn't be overly necessary but is nice for
+    # compatibility/completeness sake.
+    #
+    # That said, unlike UScale this might require a bit more reworking
+    # to account for the 'digits' parameter and allowing '.' in editing.
   end
   
   module Draw
