@@ -238,18 +238,18 @@ module CDK
       'U' => Ncurses::A_UNDERLINE
     }
 
-    result = if !(string.nil?) then string else '' end
+    result = if string.nil? then '' else string end
     base_len = result.size
-    tmpattr = oldattr & Ncurses.A_ATTRIBUTES
+    tmpattr = oldattr & Ncurses::A_ATTRIBUTES
 
-    newattr &= A_ATTRIBUTES
+    newattr &= Ncurses::A_ATTRIBUTES
     if tmpattr != newattr
       while tmpattr != newattr
         found = false
         table.keys.each do |key|
           if (table[key] & tmpattr) != (table[key] & newattr)
             found = true
-            result << L_MARKER
+            result << CDK::L_MARKER
             if (table[key] & tmpattr).nonzero?
               result << '!'
               tmpattr &= ~(table[key])
@@ -263,12 +263,12 @@ module CDK
         end
         # XXX: Only checks if terminal has colours not if colours are started
         if Ncurses.has_colors?
-          if (tmpattr & Ncurses.A_COLOR) != (newattr & Ncurses.A_COLOR)
+          if (tmpattr & Ncurses::A_COLOR) != (newattr & Ncurses::A_COLOR)
             oldpair = Ncurses.PAIR_NUMBER(tmpattr)
             newpair = Ncurses.PAIR_NUMBER(newattr)
             if !found
               found = true
-              result << L_MARKER
+              result << CDK::L_MARKER
             end
             if newpair.zero?
               result << '!'
@@ -277,13 +277,13 @@ module CDK
               result << '/'
               result << newpair.to_s
             end
-            tmpattr &= ~(Ncurses.A_COLOR)
-            newattr &= ~(Ncurses.A_COLOR)
+            tmpattr &= ~(Ncurses::A_COLOR)
+            newattr &= ~(Ncurses::A_COLOR)
           end
         end
 
         if found
-          result << R_MARKER
+          result << CDK::R_MARKER
         else
           break
         end
@@ -534,7 +534,7 @@ module CDK
     
     unless string.nil?
       string.each do |char|
-        newstring << char.chr
+        newstring << (char & 255).chr
       end
     end
 
@@ -546,6 +546,7 @@ module CDK
   def CDK.chtype2String(string)
     newstring = ''
     unless string.nil?
+      need = 0
       (0...string.size).each do |x|
         need = CDK.decodeAttribute(newstring, need,
                                    x > 0 ? string[x - 1] : 0, string[x])
@@ -571,7 +572,7 @@ module CDK
 
     # Open the directory.
     Dir.foreach(directory) do |filename|
-      next if filename[0] == '.'
+      next if filename == '.'
       list << filename
     end
 
@@ -1633,7 +1634,7 @@ module CDK
       CDK.moveCursesWindow(@shadow_win, -xdiff, -ydiff)
 
       # Touch the windows so the 'move'
-      SCREEN.refreshCDKWindow(@screen.window)
+      CDK::SCREEN.refreshCDKWindow(@screen.window)
 
       # Redraw the window, if they asked for it.
       if refresh_flag
@@ -8219,7 +8220,7 @@ module CDK
       end
 
       # Create the entry field.
-      temp_width =  if self.isFullWidth(width)
+      temp_width =  if CDK::ALPHALIST.isFullWidth(width)
                     then CDK::FULL
                     else box_width - 2 - label_len
                     end
@@ -8406,7 +8407,7 @@ module CDK
       # Create the scrolling list.  It overlaps the entry field by one line if
       # we are using box-borders.
       temp_height = @entry_field.win.getmaxy - @border_size
-      temp_width = if self.isFullWidth(width)
+      temp_width = if CDK::ALPHALIST.isFullWidth(width)
                    then CDK::FULL
                    else box_width - 1
                    end
@@ -8728,7 +8729,7 @@ module CDK
       self.entry_field.unfocus
     end
 
-    def isFullWidth(width)
+    def self.isFullWidth(width)
       width == CDK::FULL || (Ncurses.COLS != 0 && width >= Ncurses.COLS)
     end
 
@@ -8742,6 +8743,788 @@ module CDK
   end
 
   class SWINDOW < CDK::CDKOBJS
+    def initialize(cdkscreen, xplace, yplace, height, width, title,
+        save_lines, box, shadow)
+      super()
+      parent_width = cdkscreen.window.getmaxx
+      parent_height = cdkscreen.window.getmaxy
+      box_width = width
+      box_height = height
+      bindings = {
+        CDK::BACKCHAR => Ncurses::KEY_PPAGE,
+        'b'           => Ncurses::KEY_PPAGE,
+        'B'           => Ncurses::KEY_PPAGE,
+        CDK::FORCHAR  => Ncurses::KEY_NPAGE,
+        ' '           => Ncurses::KEY_NPAGE,
+        'f'           => Ncurses::KEY_NPAGE,
+        'F'           => Ncurses::KEY_NPAGE,
+        '|'           => Ncurses::KEY_HOME,
+        '$'           => Ncurses::KEY_END,
+      }
+
+      self.setBox(box)
+
+      # If the height is a negative value, the height will be
+      # ROWS-height, otherwise the height will be the given height.
+      box_height = CDK.setWidgetDimension(parent_height, height, 0)
+
+      # If the width is a negative value, the width will be
+      # COLS-width, otherwise the widget will be the given width.
+      box_width = CDK.setWidgetDimension(parent_width, width, 0)
+      box_width = self.setTitle(title, box_width)
+
+      # Set the box height.
+      box_height += @title_lines + 1
+
+      # Make sure we didn't extend beyond the dimensions of the window.
+      box_width = [box_width, parent_width].min
+      box_height = [box_height, parent_height].min
+
+      # Set the rest of the variables.
+      @title_adj = @title_lines + 1
+
+      # Rejustify the x and y positions if we need to.
+      xtmp = [xplace]
+      ytmp = [yplace]
+      CDK.alignxy(cdkscreen.window, xtmp, ytmp, box_width, box_height)
+      xpos = xtmp[0]
+      ypos = ytmp[0]
+
+      # Make the scrolling window.
+      @win = Ncurses::WINDOW.new(box_height, box_width, ypos, xpos)
+      if @win.nil?
+        self.destroy
+        return nil
+      end
+      @win.keypad(true)
+
+      # Make the field window
+      @field_win = @win.subwin(box_height - @title_lines - 2, box_width - 2,
+          ypos + @title_lines + 1, xpos + 1)
+      @field_win.keypad(true)
+
+      # Set the rest of the variables
+      @screen = cdkscreen
+      @parent = cdkscreen.window
+      @shadow_win = nil
+      @box_height = box_height
+      @box_width = box_width
+      @view_size = box_height - @title_lines - 2
+      @current_top = 0
+      @max_top_line = 0
+      @left_char = 0
+      @max_left_char = 0
+      @list_size = 0
+      @widest_line = -1
+      @save_lines = save_lines
+      @accepts_focus = true
+      @input_window = @win
+      @shadow = shadow
+
+      if !self.createList(save_lines)
+        self.destroy
+        return nil
+      end
+
+      # Do we need to create a shadow?
+      if shadow
+        @shadow_win = Ncurses::WINDOW.new(box_height, box_width,
+            ypos + 1, xpos + 1)
+      end
+
+      # Create the key bindings
+      bindings.each do |from, to|
+        self.bind(:SWINDOW, from, :getc, to)
+      end
+
+      # Register this baby.
+      cdkscreen.register(:SWINDOW, self)
+    end
+
+    # This sets the lines and the box attribute of the scrolling window.
+    def set(list, lines, box)
+      self.setContents(list, lines)
+      self.setBox(box)
+    end
+
+    def setupLine(list, x)
+      list_len = []
+      list_pos = []
+      @list[x] = CDK.char2Chtype(list, list_len, list_pos)
+      @list_len[x] = list_len[0]
+      @list_pos[x] = CDK.justifyString(@box_width, list_len[0], list_pos[0])
+      @widest_line = [@widest_line, @list_len[x]].max
+    end
+
+    # This sets all the lines inside the scrolling window.
+    def setContents(list, list_size)
+      # First let's clean all the lines in the window.
+      self.clean
+      self.createList(list_size)
+
+      # Now let's set all the lines inside the window.
+      (0...list_size).each do |x|
+        self.setupLine(list[x], x)
+      end
+
+      # Set some more important members of the scrolling window.
+      @list_size = list_size
+      @max_top_line = @list_size - @view_size
+      @max_top_line = [@max_top_line, 0].max
+      @max_left_char = @widest_line - (@box_width - 2)
+      @current_top = 0
+      @left_char = 0
+    end
+
+    def getContents(size)
+      size << @list_size
+      return @list
+    end
+
+    def freeLine(x)
+    #  if x < @list_size
+    #    @list[x] = 0
+    #  end
+    end
+
+    # This adds a line to the scrolling window.
+    def add(list, insert_pos)
+      # If we are at the maximum number of save lines erase the first
+      # position and bump everything up one spot
+      if @list_size == @save_lines and @list_size > 0
+        @list = @list[1..-1]
+        @list_pos = @list_pos[1..-1]
+        @list_len = @list_len[1..-1]
+        @list_size -= 1
+      end
+
+      # Determine where the line is being added.
+      if insert_pos == CDK::TOP
+        # We need to 'bump' everything down one line...
+        @list = [@list[0]] + @list
+        @list_pos = [@list_pos[0]] + @list_pos
+        @list_len = [@list_len[0]] + @list_len
+
+        # Add it into the scrolling window.
+        self.setupLine(list, 0)
+
+        # set some variables.
+        @current_top = 0
+        if @list_size < @save_lines
+          @list_size += 1
+        end
+
+        # Set the maximum top line.
+        @max_top_line = @list_size - @view_size
+        @max_top_line = [@max_top_line, 0].max
+
+        @max_left_char = @widest_line - (@box_width - 2)
+      else
+        # Add to the bottom.
+        @list += ['']
+        @list_pos += [0]
+        @list_len += [0]
+        self.setupLine(list, @list_size)
+        
+        @max_left_char = @widest_line - (@box_width - 2)
+
+        # Increment the item count and zero out the next row.
+        if @list_size < @save_lines
+          @list_size += 1
+          self.freeLine(@list_size)
+        end
+
+        # Set the maximum top line.
+        if @list_size <= @view_size
+          @max_top_line = 0
+          @current_top = 0
+        else
+          @max_top_line = @list_size - @view_size
+          @current_top = @max_top_line
+        end
+      end
+
+      # Draw in the list.
+      self.drawList(@box)
+    end
+
+    # This jumps to a given line.
+    def jumpToLine(line)
+      # Make sure the line is in bounds.
+      if line == CDK::BOTTOM || line >= @list_size
+        # We are moving to the last page.
+        @current_top = @list_size - @view_size
+      elsif line == TOP || line <= 0
+        # We are moving to the top of the page.
+        @current_top = 0
+      else
+        # We are moving in the middle somewhere.
+        if @view_size + line < @list_size
+          @current_top = line
+        else
+          @current_top = @list_size - @view_size
+        end
+      end
+
+      # A little sanity check to make sure we don't do something silly
+      if @current_top < 0
+        @current_top = 0
+      end
+
+      # Redraw the window.
+      self.draw(@box)
+    end
+
+    # This removes all the lines inside the scrolling window.
+    def clean
+      # Clean up the memory used...
+      (0...@list_size).each do |x|
+        self.freeLine(x)
+      end
+
+      # Reset some variables.
+      @list_size = 0
+      @max_left_char = 0
+      @widest_line = 0
+      @current_top = 0
+      @max_top_line = 0
+
+      # Redraw the window.
+      self.draw(@box)
+    end
+
+    # This trims lines from the scrolling window.
+    def trim(begin_line, end_line)
+      # Check the value of begin_line
+      if begin_line < 0
+        start = 0
+      elsif begin_line >= @list_size
+        start = @list_size - 1
+      else
+        start = begin_line
+      end
+
+      # Check the value of end_line
+      if end_line < 0
+        finish = 0
+      elsif end_line >= @list_size
+        finish = @list_size - 1
+      else
+        finish = end_line
+      end
+
+      # Make sure the start is lower than the end.
+      if start > finish
+        return
+      end
+
+      # Start nuking elements from the window
+      (start..finish).each do |x|
+        self.freeLine(x)
+
+        if x < list_size - 1
+          @list[x] = @list[x + 1]
+          @list_pos[x] = @list_pos[x + 1]
+          @list_len[x] = @list_len[x + 1]
+        end
+      end
+
+      # Adjust the item count correctly.
+      @list_size = @list_size - (end_line - begin_line) - 1
+
+      # Redraw the window.
+      self.draw(@box)
+    end
+
+    # This allows the user to play inside the scrolling window.
+    def activate(actions)
+      # Draw the scrolling list.
+      self.draw(@box)
+
+      if actions.nil? || actions.size == 0
+        while true
+          input = self.getch([])
+
+          # inject the character into the widget.
+          self.inject(input)
+          if @exit_type != :EARLY_EXIT
+            return
+          end
+        end
+      else
+        #Inject each character one at a time
+        actions.each do |action|
+          self.inject(action)
+          if @exit_type != :EARLY_EXIT
+            return
+          end
+        end
+      end
+
+      # Set the exit type and return.
+      self.setExitType(0)
+    end
+
+    # This injects a single character into the widget.
+    def inject(input)
+      pp_return = 1
+      ret = -1
+      complete = false
+
+      # Set the exit type.
+      self.setExitType(0)
+
+      # Draw the window....
+      self.draw(@box)
+
+      # Check if there is a pre-process function to be called.
+      unless @pre_process_func.nil?
+        # Call the pre-process function.
+        pp_return = @pre_process_func.call(:SWINDOW, self,
+            @pre_process_data, input)
+      end
+
+      # Should we continue?
+      if pp_return != 0
+        # Check for a key binding.
+        if self.checkBind(:SWINDOW, input)
+          complete = true
+        else
+          case input
+          when Ncurses::KEY_UP
+            if @current_top > 0
+              @current_top -= 1
+            else
+              CDK.Beep
+            end
+          when Ncurses::KEY_DOWN
+            if @current_top >= 0 && @current_top < @max_top_line
+              @current_top += 1
+            else
+              CDK.Beep
+            end
+          when Ncurses::KEY_RIGHT
+            if @left_char < @max_left_char
+              @left_char += 1
+            else
+              CDK.Beep
+            end
+          when Ncurses::KEY_LEFT
+            if @left_char > 0
+              @left_char -= 1
+            else
+              CDK.Beep
+            end
+          when Ncurses::KEY_PPAGE
+            if @current_top != 0
+              if @current_top >= @view_size
+                @current_top = @current_top - (@view_size - 1)
+              else
+                @current_top = 0
+              end
+            else
+              CDK.Beep
+            end
+          when Ncurses::KEY_NPAGE
+            if @current_top != @max_top_line
+              if @current_top + @view_size < @max_top_line
+                @current_top = @current_top + (@view_size - 1)
+              else
+                @current_top = @max_top_line
+              end
+            else
+              CDK.Beep
+            end
+          when Ncurses::KEY_HOME
+            @left_char = 0
+          when Ncurses::KEY_END
+            @left_char = @max_left_char + 1
+          when 'g'.ord, '1'.ord, '<'.ord
+            @current_top = 0
+          when 'G'.ord, '>'.ord
+            @current_top = @max_top_line
+          when 'l'.ord, 'L'.ord
+            self.loadInformation
+          when 's'.ord, 'S'.ord
+            self.saveInformation
+          when CDK::KEY_TAB, CDK::KEY_RETURN, Ncurses::KEY_ENTER
+            self.setExitType(input)
+            ret = 1
+            complete = true
+          when CDK::KEY_ESC
+            self.setExitType(input)
+            complete = true
+          when Ncurses::ERR
+            self.setExitType(input)
+            complete = true
+          when CDK::REFRESH
+            @screen.erase
+            @screen.refresh
+          end
+        end
+
+        # Should we call a post-process?
+        if !complete && !(@post_process_func.nil?)
+          @post_process_func.call(:SWINDOW, self, @post_process_data, input)
+        end
+      end
+
+      if !complete
+        self.drawList(@box)
+        self.setExitType(0)
+      end
+
+      @return_data = ret
+      return ret
+    end
+
+    # This moves the window field to the given location.
+    def move(xplace, yplace, relative, refresh_flag)
+      current_x = @win.getbegx
+      current_y = @win.getbegy
+      xpos = xplace
+      ypos = yplace
+
+      # If this is a relative move, then we will adjust where we want
+      # to move to.
+      if relative
+        xpos = @win.getbegx + xplace
+        ypos = @win.getbegy + yplace
+      end
+
+      # Adjust the window if we need to.
+      xtmp = [xpos]
+      ytmp = [ypos]
+      CDK.alignxy(@screen.window, xtmp, ytmp, @box_width, @box_height)
+      xpos = xtmp[0]
+      ypos = ytmp[0]
+
+      # Get the difference
+      xdiff = current_x - xpos
+      ydiff = current_y - ypos
+
+      # Move the window to the new location.
+      CDK.moveCursesWindow(@win, -xdiff, -ydiff)
+      CDK.moveCursesWindow(@shadow_win, -xdiff, -ydiff)
+
+      # Touch the windows so they 'move'.
+      CDK::SCREEN.refreshCDKWindow(@screen.window)
+
+      # Redraw the window, if they asked for it.
+      if refresh_flag
+        self.draw(@box)
+      end
+    end
+
+    # This function draws the swindow window widget.
+    def draw(box)
+      # Do we need to draw in the shadow.
+      unless @shadow_win.nil?
+        Draw.drawShadow(@shadow_win)
+      end
+
+      # Box the widget if needed
+      if box
+        Draw.drawObjBox(@win, self)
+      end
+
+      self.drawTitle(@win)
+
+      @win.wrefresh
+
+      # Draw in the list.
+      self.drawList(box)
+    end
+
+    # This draws in the contents of the scrolling window
+    def drawList(box)
+      # Determine the last line to draw.
+      if @list_size < @view_size
+        last_line = @list_size
+      else
+        last_line = @view_size
+      end
+
+      # Erase the scrolling window.
+      @field_win.werase
+
+      # Start drawing in each line.
+      (0...last_line).each do |x|
+        screen_pos = @list_pos[x + @current_top] - @left_char
+
+        # Write in the correct line.
+        if screen_pos >= 0
+          Draw.writeChtype(@field_win, screen_pos, x,
+              @list[x + @current_top], CDK::HORIZONTAL, 0,
+              @list_len[x + @current_top])
+        else
+          Draw.writeChtype(@field_win, 0, x, @list[x + @current_top],
+              CDK::HORIZONTAL, @left_char - @list_pos[x + @current_top],
+              @list_len[x + @current_top])
+        end
+      end
+
+      @field_win.wrefresh
+    end
+
+    # This sets the background attribute of the widget.
+    def setBKattr(attrib)
+      @win.wbkgd(attrib)
+      @field_win.wbkgd(attrib)
+    end
+
+    # Free any storage associated with the info-list.
+    def destroyInfo
+      @list = []
+      @list_pos = []
+      @list_len = []
+    end
+
+    # This function destroys the scrolling window widget.
+    def destroy
+      self.destroyInfo
+
+      self.cleanTitle
+
+      # Delete the windows.
+      CDK.deleteCursesWindow(@shadow_win)
+      CDK.deleteCursesWindow(@field_win)
+      CDK.deleteCursesWindow(@win)
+
+      # Clean the key bindings.
+      self.cleanBindings(:SWINDOW)
+
+      # Unregister this object.
+      CDK::SCREEN.unregister(:SWINDOW, self)
+    end
+
+    # This function erases the scrolling window widget.
+    def erase
+      if self.validCDKObject
+        CDK.eraseCursesWindow(@win)
+        CDK.eraseCursesWindow(@shadow_win)
+      end
+    end
+
+    # This execs a command and redirects the output to the scrolling window.
+    def exec(command, insert_pos)
+      count = -1
+      Ncurses.endwin
+
+      # Try to open the command.
+      # XXX This especially needs exception handling given how Ruby
+      # implements popen
+      unless (ps = popen(command, 'r')).nil?
+        # Start reading.
+        until (temp = ps.gets).nil?
+          if temp.len != 0 && temp[-1] == '\n'
+            temp = temp[0...-1]
+          end
+          # Add the line to the scrolling window.
+          self.add(temp, insert_pos)
+          count += 1
+        end
+
+        # Close the pipe
+        ps.close
+      end
+      return count
+    end
+
+    def showMessage2(msg, msg2, filename)
+      mesg = [
+          msg,
+          msg2,
+          "<C>(%s)" % [filename],
+          ' ',
+          '<C> Press any key to continue.',
+      ]
+      @screen.popupLabel(mesg, mesg.size)
+    end
+
+    # This function allows the user to dump the information from the
+    # scrolling window to a file.
+    def saveInformation
+      # Create the entry field to get the filename.
+      entry = CDK::ENTRY.new(@screen, CDK::CENTER, CDK::CENTER,
+          '<C></B/5>Enter the filename of the save file.',
+          'Filename: ', Ncurses::A_NORMAL, '_'.ord, :MIXED,
+          20, 1, 256, true, false)
+
+      # Get the filename.
+      filename = entry.activate([])
+
+      # Did they hit escape?
+      if entry.exit_type == :ESCAPE_HIT
+        # Popup a message.
+        mesg = [
+            '<C></B/5>Save Canceled.',
+            '<C>Escape hit. Scrolling window information not saved.',
+            ' ',
+            '<C>Press any key to continue.'
+        ]
+        @screen.popupLabel(mesg, 4)
+
+        # Clean up and exit.
+        entry.destroy
+      end
+
+      # Write the contents of the scrolling window to the file.
+      lines_saved = self.dump(filename)
+
+      # Was the save successful?
+      if lines_saved == -1
+        # Nope, tell 'em
+        self.showMessage2('<C></B/16>Error', '<C>Could not save to the file.',
+            filename)
+      else
+        # Yep, let them know how many lines were saved.
+        self.showMessage2('<C></B/5>Save Successful',
+            '<C>There were %d lines saved to the file' % [lines_saved],
+            filename)
+      end
+
+      # Clean up and exit.
+      entry.destroy
+      @screen.erase
+      @screen.draw
+    end
+
+    # This function allows the user to load new information into the scrolling
+    # window.
+    def loadInformation
+      # Create the file selector to choose the file.
+      fselect = CDK::FSELECT.new(@screen, CDK::CENTER, CDK::CENTER, 20, 55,
+          '<C>Load Which File', 'FIlename', Ncurses::A_NORMAL, '.',
+          Ncurses::A_REVERSE, '</5>', '</48>', '</N>', '</N>', true, false)
+
+      # Get the filename to load.
+      filename = fselect.activate([])
+
+      # Make sure they selected a file.
+      if fselect.exit_type == :ESCAPE_HIT
+        # Popup a message.
+        mesg = [
+            '<C></B/5>Load Canceled.',
+            ' ',
+            '<C>Press any key to continue.',
+        ]
+        @screen.popupLabel(mesg, 3)
+
+        # Clean up and exit
+        fselect.destroy
+        return
+      end
+
+      # Copy the filename and destroy the file selector.
+      filename = fselect.pathname
+      fselect.destroy
+
+      # Maybe we should check before nuking all the information in the
+      # scrolling window...
+      if @list_size > 0
+        # Create the dialog message.
+        mesg = [
+            '<C></B/5>Save Information First',
+            '<C>There is information in the scrolling window.',
+            '<C>Do you want to save it to a file first?',
+        ]
+        button = ['(Yes)', '(No)']
+
+        # Create the dialog widget.
+        dialog = CDK::DIALOG.new(@screen, CDK::CENTER, CDK::CENTER,
+            mesg, 3, button, 2, Ncurses.COLOR_PAIR(2) | Ncurses::A_REVERSE,
+            true, true, false)
+
+        # Activate the widet.
+        answer = dialog.activate([])
+        dialog.destroy
+
+        # Check the answer.
+        if (answer == -1 || answer == 0)
+          # Save the information.
+          self.saveInformation
+        end
+      end
+
+      # Open the file and read it in.
+      f = File.open(filename)
+      file_info = f.readlines.map do |line|
+        if line.size > 0 && line[-1] == "\n"
+          line[0...-1]
+        else
+          line
+        end
+      end.compact
+
+      # TODO error handling
+      # if (lines == -1)
+      # {
+      #   /* The file read didn't work. */
+      #   showMessage2 (swindow,
+      #                 "<C></B/16>Error",
+      #                 "<C>Could not read the file",
+      #                 filename);
+      #   freeChar (filename);
+      #   return;
+      # }
+
+      # Clean out the scrolling window.
+      self.clean
+
+      # Set the new information in the scrolling window.
+      self.set(file_info, file_info.size, @box)
+    end
+
+    # This actually dumps the information from the scrolling window to a file.
+    def dump(filename)
+      # Try to open the file.
+      #if ((outputFile = fopen (filename, "w")) == 0)
+      #{
+      #  return -1;
+      #}
+      output_file = File.new(filename, 'w')
+
+      # Start writing out the file.
+      @list.each do |item|
+        raw_line = CDK.chtype2Char(item)
+        output_file << "%s\n" % raw_line
+      end
+
+      # Close the file and return the number of lines written.
+      output_file.close
+      return @list_size
+    end
+
+    def focus
+      self.draw(@box)
+    end
+
+    def unfocus
+      self.draw(@box)
+    end
+
+    def createList(list_size)
+      status = false
+
+      if list_size >= 0
+        new_list = []
+        new_pos = []
+        new_len = []
+
+        status = true
+        self.destroyInfo
+
+        @list = new_list
+        @list_pos = new_pos
+        @list_len = new_len
+      else
+        self.destroyInfo
+        status = false
+      end
+      return status
+    end
+
     def position
       super(@win)
     end
@@ -8752,6 +9535,10 @@ module CDK
   end
 
   class CALENDAR < CDK::CDKOBJS
+    def initialize
+      super()
+    end
+
     def position
       super(@win)
     end
@@ -8762,6 +9549,11 @@ module CDK
   end
 
   class VIEWER < CDK::CDKOBJS
+    def initialize(cdkscreen, xplace, yplace, height, width,
+        buttons, button_count, button_highlight, box, shadow)
+      super()
+    end
+
     def position
       super(@win)
     end
@@ -8772,6 +9564,963 @@ module CDK
   end
 
   class FSELECT < CDK::CDKOBJS
+    attr_reader :scroll_field, :entry_field
+    attr_reader :dir_attribute, :file_attribute, :link_attribute, :highlight
+    attr_reader :sock_attribute, :field_attribute, :filler_character
+    attr_reader :dir_contents, :file_counter, :pwd, :pathname
+
+    def initialize(cdkscreen, xplace, yplace, height, width, title, label,
+        field_attribute, filler_char, highlight, d_attribute, f_attribute,
+        l_attribute, s_attribute, box, shadow)
+      super()
+      parent_width = cdkscreen.window.getmaxx
+      parent_height = cdkscreen.window.getmaxy
+      bindings = {
+          CDK::BACKCHAR => Ncurses::KEY_PPAGE,
+          CDK::FORCHAR  => Ncurses::KEY_NPAGE,
+      }
+
+      self.setBox(box)
+
+      # If the height is a negative value the height will be ROWS-height,
+      # otherwise the height will be the given height
+      box_height = CDK.setWidgetDimension(parent_height, height, 0)
+
+      # If the width is a negative value, the width will be COLS-width,
+      # otherwise the width will be the given width.
+      box_width = CDK.setWidgetDimension(parent_width, width, 0)
+
+      # Rejustify the x and y positions if we need to.
+      xtmp = [xplace]
+      ytmp = [yplace]
+      CDK.alignxy(cdkscreen.window, xtmp, ytmp, box_width, box_height)
+      xpos = xtmp[0]
+      ypos = ytmp[0]
+
+      # Make sure the box isn't too small.
+      box_width = [box_width, 15].max
+      box_height = [box_height, 6].max
+
+      # Make the file selector window.
+      @win = Ncurses::WINDOW.new(box_height, box_width, ypos, xpos)
+
+      # is the window nil?
+      if @win.nil?
+        fselect.destroy
+        return nil
+      end
+      @win.keypad(true)
+
+      # Set some variables.
+      @screen = cdkscreen
+      @parent = cdkscreen.window
+      @dir_attribute = d_attribute.clone
+      @file_attribute = f_attribute.clone
+      @link_attribute = l_attribute.clone
+      @sock_attribute = s_attribute.clone
+      @highlight = highlight
+      @filler_character = filler_char
+      @field_attribute = field_attribute
+      @box_height = box_height
+      @box_width = box_width
+      @file_counter = 0
+      @pwd = ''
+      @input_window = @win
+      @shadow = shadow
+      @shadow_win = nil
+
+      # Get the present working directory.
+      # XXX need error handling (set to '.' on error)
+      @pwd = Dir.getwd
+
+      # Get the contents of the current directory
+      self.setDirContents
+
+      # Create the entry field in the selector
+      label_len = []
+      CDK.char2Chtype(label, label_len, [])
+      label_len = label_len[0]
+
+      temp_width = if CDK::FSELECT.isFullWidth(width)
+                   then CDK::FULL
+                   else box_width - 2 - label_len
+                   end
+      @entry_field = CDK::ENTRY.new(cdkscreen, @win.getbegx, @win.getbegy,
+          title, label, field_attribute, filler_char, :MIXED, temp_width,
+          0, 512, box, false)
+
+      # Make sure the widget was created.
+      if @entry_field.nil?
+        self.destroy
+        return nil
+      end
+
+      # Set the lower left/right characters of the entry field.
+      @entry_field.setLLchar(Ncurses::ACS_LTEE)
+      @entry_field.setLRchar(Ncurses::ACS_RTEE)
+
+      # This is a callback to the scrolling list which displays information
+      # about the current file.  (and the whole directory as well)
+      display_file_info_cb = lambda do |object_type, entry, fselect, key|
+        # Get the file name.
+        filename = fselect.entry_field.info
+
+        # Get specific information about the files.
+        # lstat (filename, &fileStat);
+        file_stat = File.stat(filename)
+
+        # Determine the file type
+        filetype = case
+                   when file_stat.symlink?
+                     'Symbolic Link'
+                   when file_stat.socket?
+                     'Socket'
+                   when file_stat.file?
+                     'Regular File'
+                   when file_stat.directory?
+                     'Directory'
+                   when file_stat.chardev?
+                     'Character Device'
+                   when file_stat.blockdev?
+                     'Block Device'
+                   when file_stat.ftype == 'fif'
+                     'FIFO Device'
+                   else
+                     'Unknown'
+                   end
+
+        # Get the user name and group name.
+        pw_ent = Etc.getpwuid(file_stat.uid)
+        gr_ent = Etc.getgrgid(file_stat.gid)
+
+        # Convert the mode to both string and int
+        # intMode = mode2Char (stringMode, fileStat.st_mode);
+
+        # Create the message.
+        mesg = [
+            'Directory  : </U>%s' % [fselect.pwd],
+            'Filename   : </U>%s' % [filename],
+            'Owner      : </U>%s<!U> (%d)' % [pw_ent.name, file_stat.uid],
+            'Group      : </U>%s<!U> (%d)' % [gr_ent.name, file_stat.gid],
+            'Permissions: </U>%s<!U> (%o)' % [string_mode, int_mode],
+            'Size       : </U>%ld<!U> bytes' % [file_stat.size],
+            'Last Access: </U>%s' % [file_stat.atime],
+            'Last Change: </U>%s' % [file_stat.ctime],
+            'File Type  : </U>%s' % [filetype]
+        ]
+
+        # Create the pop up label.
+        info_label = CDK::LABEL.new(entry.screen, CDK::CENTER, CDK::CENTER,
+            mesg, 9, true, false)
+        info_label.draw(true)
+        info_label.getch([])
+
+        info_label.destroy
+
+        # Redraw the file selector.
+        fselect.draw(fselect.box)
+        return true
+      end
+
+      # This tries to complete the filename
+      complete_filename_cb = lambda do |object_type, object, fselect, key|
+        scrollp = fselect.scroll_field
+        entry = fselect.entry_field
+        filename = entry.info.clone
+        mydirname = CDK.dirName(filename)
+        current_index = 0
+        
+        # Make sure the filename is not nil/empty.
+        if filename.nil? || filename.size == 0
+          CDK.Beep
+          return true
+        end
+
+        # Try to expand the filename if it starts with a ~
+        unless (new_filename = CDK::FSELECT.expandTilde(filename)).nil?
+          filename = new_filename
+          entry.setValue(filename)
+          entry.draw(entry.box)
+        end
+
+        # Make sure we can change into the directory.
+        is_directory = Dir.exists?(filename)
+        # if (chdir (fselect->pwd) != 0)
+        #    return FALSE;
+        #Dir.chdir(fselect.pwd)
+
+        # XXX original: isDirectory ? mydirname : filename
+        fselect.set(if is_directory then filename else mydirname end,
+            fselect.field_attribute, fselect.filler_character,
+            fselect.highlight, fselect.dir_attribute, fselect.file_attribute,
+            fselect.link_attribute, fselect.sock_attribute, fselect.box)
+
+        # If we can, change into the directory.
+        # XXX original: if isDirectory (with 0 as success result)
+        if is_directory
+          entry.setValue(filename)
+          entry.draw(entry.box)
+        end
+
+        # Create the file list.
+        list = []
+        (0...fselect.file_counter).each do |x|
+          list << fselect.contentToPath(fselect.dir_contents[x])
+        end
+
+        # Look for a unique filename match.
+        index = CDK.searchList(list, fselect.file_counter, filename)
+
+        # If the index is less than zero, return we didn't find a match.
+        if index < 0
+          CDK.Beep
+        else
+          # Move to the current item in the scrolling list.
+          # difference = Index - scrollp->currentItem;
+          # absoluteDifference = abs (difference);
+          # if (difference < 0)
+          # {
+          #    for (x = 0; x < absoluteDifference; x++)
+          #    {
+          #       injectMyScroller (fselect, KEY_UP);
+          #    }
+          # }
+          # else if (difference > 0)
+          # {
+          #    for (x = 0; x < absoluteDifferene; x++)
+          #    {
+          #       injectMyScroller (fselect, KEY_DOWN);
+          #    }
+          # }
+          scrollp.setPosition(index)
+          fselect.drawMyScroller
+
+          # Ok, we found a match, is the next item similar?
+          if index + 1 < fselect.file_counter && index + 1 < list.size &&
+              list[index + 1][0..([filename.size, list[index + 1].size].min)] ==
+              filename
+            current_index = index
+            base_chars = filename.size
+            matches = 0
+
+            # Determine the number of files which match.
+            while current_index < fselect.file_counter
+              if current_index + 1 < list.size
+                if list[current_index][0..(
+                    [filename.size, list[current_index].size].max)] == filename
+                  matches += 1
+                end
+              end
+              current_index += 1
+            end
+
+            # Start looking for the common base characters.
+            while true
+              secondary_matches = 0
+              (index...index + matches).each do |x|
+                if list[index][base_chars] == list[x][base_chars]
+                  secondary_matches += 1
+                end
+              end
+
+              if secondary_matches != matches
+                CDK.Beep
+                break
+              end
+
+              # Inject the character into the entry field.
+              fselect.entry_field.inject(list[index][base_chars])
+              base_chars += 1
+            end
+          else
+            # Set the entry field with the found item.
+            entry.setValue(list[index])
+            entry.draw(entry.box)
+          end
+        end
+
+        return true
+      end
+
+      # This allows the user to delete a file.
+      delete_file_cb = lambda do |object_type, fscroll, fselect|
+        buttons = ['No', 'Yes']
+
+        # Get the filename which is to be deleted.
+        filename = CDK.chtype2Char(fscroll.item[fscroll.current_item])
+        filename = filename[0...-1]
+
+        # Create the dialog message.
+        mesg = [
+            '<C>Are you sure you want to delete the file:',
+            '<C></U>"%s"?' % [filename]
+        ]
+
+        # Create the dialog box.
+        question = CDK::DIALOG.new(fselect.screen, CDK::CENTER, CDK::CENTER,
+            mesg, 2, buttons, 2, Ncurses::A_REVERSE, true, true, false)
+
+        # If the said yes then try to nuke it.
+        if question.activate([]) == 1
+          # If we were successful, reload the scrolling list.
+          if File.unlink(filename) == 0
+            # Set the file selector information.
+            fselect.set(fselect.pwd, fselect.field_attribute,
+                fselect.filler_character, fselect.highlight,
+                fselect.dir_attribute, fselect.file_attribute,
+                fselect.link_attribute, fselect.sock_attribute, fselect.box)
+          else
+            # Pop up a message.
+            # mesg[0] = copyChar (errorMessage ("<C>Cannot delete file: %s"));
+            # mesg[1] = copyChar (" ");
+            # mesg[2] = copyChar("<C>Press any key to continue.");
+            # popupLabel(ScreenOf (fselect), (CDK_CSTRING2) mesg, 3);
+            # freeCharList (mesg, 3);
+          end
+        end
+
+        # Clean up.
+        question.destroy
+
+        # Redraw the file seoector.
+        fselect.draw(fselect.box)
+      end
+
+      # Start of callback functions.
+      adjust_scroll_cb = lambda do |object_type, object, fselect, key|
+        scrollp = fselect.scroll_field
+        entry = fselect.entry_field
+
+        if scrollp.list_size > 0
+          # Move the scrolling list.
+          fselect.injectMyScroller(key)
+
+          # Get the currently highlighted filename.
+          current = CDK.chtype2Char(scrollp.item[scrollp.current_item])
+          #current = CDK.chtype2String(scrollp.item[scrollp.current_item])
+          current = current[0...-1]
+
+          temp = CDK::FSELECT.make_pathname(fselect.pwd, current)
+
+          # Set the value in the entry field.
+          entry.setValue(temp)
+          entry.draw(entry.box)
+
+          return true
+        end
+        CDK.Beep
+        return false
+      end
+
+      # Define the callbacks for the entry field.
+      @entry_field.bind(:ENTRY, Ncurses::KEY_UP, adjust_scroll_cb, self)
+      @entry_field.bind(:ENTRY, Ncurses::KEY_PPAGE, adjust_scroll_cb, self)
+      @entry_field.bind(:ENTRY, Ncurses::KEY_DOWN, adjust_scroll_cb, self)
+      @entry_field.bind(:ENTRY, Ncurses::KEY_NPAGE, adjust_scroll_cb, self)
+      @entry_field.bind(:ENTRY, CDK::KEY_TAB, complete_filename_cb, self)
+      @entry_field.bind(:ENTRY, CDK.CTRL('^'), display_file_info_cb, self)
+
+      # Put the current working directory in the entry field.
+      @entry_field.setValue(@pwd)
+
+      # Create the scrolling list in the selector.
+      temp_height = @entry_field.win.getmaxy - @border_size
+      temp_width = if CDK::FSELECT.isFullWidth(width)
+                   then CDK::FULL
+                   else box_width - 1
+                   end
+      @scroll_field = CDK::SCROLL.new(cdkscreen,
+          @win.getbegx, @win.getbegy + temp_height, CDK::RIGHT,
+          box_height - temp_height, temp_width, '', @dir_contents,
+          @file_counter, false, @highlight, box, false)
+
+      # Set the lower left/right characters of the entry field.
+      @scroll_field.setULchar(Ncurses::ACS_LTEE)
+      @scroll_field.setURchar(Ncurses::ACS_RTEE)
+
+      # Do we want a shadow?
+      if shadow
+        @shadow_win = Ncurses::WINDOW.new(box_height, box_width,
+            ypos + 1, xpos + 1)
+      end
+
+      # Setup the key bindings
+      bindings.each do |from, to|
+        self.bind(:FSELECT, from, :getc, to)
+      end
+
+      cdkscreen.register(:FSELECT, self)
+    end
+
+    # This erases the file selector from the screen.
+    def erase
+      if self.validCDKObject
+        @scroll_field.erase
+        @entry_field.erase
+        CDK.eraseCursesWindow(@win)
+      end
+    end
+
+    # This moves the fselect field to the given location.
+    def move(xplace, yplace, relative, refresh_flag)
+      current_x = @win.getbegx
+      current_y = @win.getbegy
+      xpos = xplace
+      ypos = yplace
+
+      # If this is a relative move, then we will adjust where we want
+      # to move to.
+      if relative
+        xpos = @win.getbegx + xplace
+        ypos = @win.getbegy + yplace
+      end
+
+      # Adjust the window if we need to.
+      xtmp = [xpos]
+      ytmp = [ypos]
+      CDK.alignxy(@screen.window, xtmp, ytmp, @box_width, @box_height)
+      xpos = xtmp[0]
+      ypos = ytmp[0]
+
+      # Get the difference.
+      xdiff = current_x - xpos
+      ydiff = current_y - ypos
+
+      # Move the window to the new location
+      CDK.moveCursesWindow(@win, -xdiff, -ydiff)
+      CDK.moveCursesWindow(@shadow_win, -xdiff, -ydiff)
+
+      # Move the sub-widgets.
+      @entry_field.move(xplace, yplace, relative, false)
+      @scroll_field.move(xplace, yplace, relative, false)
+
+      # Redraw the widget if they asked for it.
+      if refresh_flag
+        self.draw(@box)
+      end
+    end
+
+    # The fselect's focus resides in the entry widget. But the scroll widget
+    # will not draw items highlighted unless it has focus.  Temporarily adjust
+    # the focus of the scroll widget when drawing on it to get the right
+    # highlighting.
+
+    def saveFocus
+      @save = @scroll_field.has_focus
+      @scroll_field.has_focus = @entry_field.has_focus
+    end
+
+    def restoreFocus
+      @scroll_field.has_focus = @save
+    end
+
+    def drawMyScroller
+      self.saveFocus
+      @scroll_field.draw(@scroll_field.box)
+      self.restoreFocus
+    end
+
+    def injectMyScroller(key)
+      self.saveFocus
+      @scroll_field.inject(key)
+      self.restoreFocus
+    end
+
+    # This draws the file selector widget.
+    def draw(box)
+      # Draw in the shadow if we need to.
+      unless @shadow_win.nil?
+        Draw.drawShadow(@shadow_win)
+      end
+
+      # Draw in the entry field.
+      @entry_field.draw(@entry_field.box)
+
+      # Draw in the scroll field.
+      self.drawMyScroller
+    end
+
+    # This means you want to use the given file selector. It takes input
+    # from the keyboard and when it's done it fills the entry info element
+    # of the structure with what was typed.
+    def activate(actions)
+      input = 0
+      ret = 0
+
+      # Draw the widget.
+      self.draw(@box)
+
+      if actions.nil? || actions.size == 0
+        while true
+          input = @entry_field.getch([])
+
+          # Inject the character into the widget.
+          ret = self.inject(input)
+          if @exit_type != :EARLY_EXIT
+            return ret
+          end
+        end
+      else
+        # Inject each character one at a time.
+        actions.each do |action|
+          ret = self.inject(action)
+          if @exit_type != :EARLY_EXIT
+            return ret
+          end
+        end
+      end
+
+      # Set the exit type and exit.
+      self.setExitType(0)
+      return 0
+    end
+
+    # This injects a single character into the file selector.
+    def inject(input)
+      ret = -1
+      complete = false
+
+      # Let the user play.
+      filename = @entry_field.inject(input)
+
+      # Copy the entry field exit_type to the file selector.
+      @exit_type = @entry_field.exit_type
+
+      # If we exited early, make sure we don't interpret it as a file.
+      if @exit_type == :EARLY_EXIT
+        return 0
+      end
+
+      # Can we change into the directory
+      #file = Dir.chdir(filename)
+      #if Dir.chdir(@pwd) != 0
+      #  return 0
+      #end
+
+      # If it's not a directory, return the filename.
+      if !Dir.exists?(filename)
+        # It's a regular file, create the full path
+        @pathname = filename.clone
+
+        # Return the complete pathname.
+        ret = @pathname
+        complete = true
+      else
+        # Set the file selector information.
+        self.set(filename, @field_attribute, @filler_character, @highlight,
+            @dir_attribute, @file_attribute, @link_attribute, @sock_attribute,
+            @box)
+
+        # Redraw the scrolling list.
+        self.drawMyScroller
+      end
+
+      if !complete
+        self.setExitType(0)
+      end
+
+      @result_data = ret
+      return ret
+    end
+
+    # This function sets the information inside the file selector.
+    def set(directory, field_attrib, filler, highlight, dir_attribute,
+        file_attribute, link_attribute, sock_attribute, box)
+      fscroll = @scroll_field
+      fentry = @entry_field
+      new_directory = ''
+
+      # keep the info sent to us.
+      @field_attribute = field_attrib
+      @filler_character = filler
+      @highlight = highlight
+
+      # Set the attributes of the entry field/scrolling list.
+      self.setFillerChar(filler)
+      self.setHighlight(highlight)
+
+      # Only do the directory stuff if the directory is not nil.
+      if !(directory.nil?) && directory.size > 0
+        # Try to expand the directory if it starts with a ~
+        if (temp_dir = CDK::FSELECT.expandTilde(directory)).size > 0
+          new_directory = temp_dir
+        else
+          new_directory = directory.clone
+        end
+
+        # Change directories.
+        if Dir.chdir(new_directory) != 0
+          CDK.Beep
+
+          # Could not get into the directory, pop up a little message.
+          mesg = [
+              '<C>Could not change into %s' % [new_directory],
+              '<C></U>%s' % ['Unknown reason.'],  # errorMessage(format)
+              ' ',
+              '<C>Press Any Key To Continue.'
+          ]
+
+          # Pop up a message.
+          @screen.popupLabel(mesg, 4)
+
+          # Get out of here.
+          self.erase
+          self.draw(@box)
+          return
+        end
+      end
+
+      # if the information coming in is the same as the information
+      # that is already there, there is no need to destroy it.
+      if @pwd != directory
+        @pwd = Dir.getwd
+      end
+
+      @file_attribute = file_attribute.clone
+      @dir_attribute = dir_attribute.clone
+      @link_attribute = link_attribute.clone
+      @sock_attribute = sock_attribute.clone
+
+      # Set the contents of the entry field.
+      fentry.setValue(@pwd)
+      fentry.draw(fentry.box)
+
+      # Get the directory contents.
+      unless self.setDirContents
+        CDK.Beep
+        return
+      end
+
+      # Set the values in the scrolling list.
+      fscroll.setItems(@dir_contents, @file_counter, false)
+    end
+
+    # This creates a list of the files in the current directory.
+    def setDirContents
+      dir_list = []
+
+      # Get the directory contents
+      file_count = CDK.getDirectoryContents(@pwd, dir_list)
+      if file_count <= 0
+        # We couldn't read the directory. Return.
+        return false
+      end
+
+      @dir_contents = dir_list
+      @file_counter = file_count
+
+      # Set the properties of the files.
+      (0...@file_counter).each do |x|
+        attr = ''
+        mode = '?'
+
+        # FIXME(original): access() would give a more correct answer
+        # TODO: add error handling
+        file_stat = File.stat(dir_list[x])
+        if file_stat.executable?
+          mode = '*'
+        else
+          mode = ' '
+        end
+
+        case
+        when file_stat.symlink?
+          attr = @link_attribute
+          mode = '@'
+        when file_stat.socket?
+          attr = @sock_attribute
+          mode = '&'
+        when file_stat.file?
+          attr = @file_attribute
+        when file_stat.directory?
+          attr = @dir_attribute
+          mode = '/'
+        end
+        @dir_contents[x] = '%s%s%s' % [attr, dir_list[x], mode]
+      end
+      return true
+    end
+
+    def getDirContents(count)
+      count << @file_counter
+      return @dir_contents
+    end
+
+    # This sets the current directory of the file selector.
+    def setDirectory(directory)
+      fentry = @entry_field
+      fscroll = @scroll_field
+      result = 1
+
+      # If the directory supplied is the same as what is already there, return.
+      if @pwd != directory
+        # Try to chdir into the given directory.
+        if Dir.chdir(directory) != 0
+          result = 0
+        else
+          @pwd = Dir.getwd
+
+          # Set the contents of the entry field.
+          fentry.setValue(@pwd)
+          fentry.draw(fentry.box)
+
+          # Get the directory contents.
+          if self.setDirContents
+            # Set the values in the scrolling list.
+            fscroll.setItems(@dir_contents, @file_counter, false)
+          else
+            result = 0
+          end
+        end
+      end
+      return result
+    end
+
+    def getDirectory
+      return @pwd
+    end
+
+    # This sets the filler character of the entry field.
+    def setFillerChar(filler)
+      @filler_character = filler
+      @entry_field.setFillerChar(filler)
+    end
+
+    def getFillerChar
+      return @filler_character
+    end
+
+    # This sets the highlight bar of the scrolling list.
+    def setHighlight(highlight)
+      @highlight = highlight
+      @scroll_field.setHighlight(highlight)
+    end
+
+    def getHighlight
+      return @highlight
+    end
+
+    # This sets the attribute of the directory attribute in the
+    # scrolling list.
+    def setDirAttribute(attribute)
+      # Make sure they are not the same.
+      if @dir_attribute != attribute
+        @dir_attribute = attribute
+        self.setDirContents
+      end
+    end
+
+    def getDirAttribute
+      return @dir_attribute
+    end
+
+    # This sets the attribute of the link attribute in the scrolling list.
+    def setLinkAttribute(attribute)
+      # Make sure they are not the same.
+      if @link_attribute != attribute
+        @link_attribute = attribute
+        self.setDirContents
+      end
+    end
+
+    def getLinkAttribute
+      return @link_attribute
+    end
+
+    # This sets the attribute of the socket attribute in the scrolling list.
+    def setSocketAttribute(attribute)
+      # Make sure they are not the same.
+      if @sock_attribute != attribute
+        @sock_attribute = attribute
+        self.setDirContents
+      end
+    end
+
+    def getSocketAttribute
+      return @sock_attribute
+    end
+
+    # This sets the attribute of the file attribute in the scrolling list.
+    def setFileAttribute(attribute)
+      # Make sure they are not the same.
+      if @file_attribute != attribute
+        @file_attribute = attribute
+        self.setDirContents
+      end
+    end
+
+    def getFileAttribute
+      return @file_attribute
+    end
+
+    # this sets the contents of the widget
+    def setContents(list, list_size)
+      scrollp = @scroll_field
+      entry = @entry_field
+
+      if !self.createList(list, list_size)
+        return
+      end
+
+      # Set the information in the scrolling list.
+      scrollp.set(@dir_contents, @file_counter, false, scrollp.highlight,
+          scrollp.box)
+
+      # Clean out the entry field.
+      self.setCurrentItem(0)
+      entry.clean
+
+      # Redraw the widget.
+      self.erase
+      self.draw(@box)
+    end
+
+    def getContents(size)
+      size << @file_counter
+      return @dir_contents
+    end
+
+    # Get/set the current position in the scroll wiget.
+    def getCurrentItem
+      return @scroll_field.getCurrent
+    end
+
+    def setCurrentItem(item)
+      if @file_counter != 0
+        @scroll_field.setCurrent(item)
+
+        data = self.contentToPath(@dir_contents[@scroll_field.getCurrentItem])
+        @entry_field.setValue(data)
+      end
+    end
+
+    # These functions set the draw characters of the widget.
+    def setMyULchar(character)
+      @entry_field.setULchar(character)
+    end
+
+    def setMyURchar(character)
+      @entry_field.setURchar(character)
+    end
+
+    def setMyLLchar(character)
+      @scroll_field.setLLchar(character)
+    end
+
+    def setMyLRchar(character)
+      @scroll_field.setLRchar(character)
+    end
+
+    def setMyVTchar(character)
+      @entry_field.setVTchar(character)
+      @scroll_field.setVTchar(character)
+    end
+
+    def setMyHZchar(character)
+      @entry_field.setHZchar(character)
+      @scroll_field.setHZchar(character)
+    end
+
+    def setMyBXattr(character)
+      @entry_field.setBXattr(character)
+      @scroll_field.setBXattr(character)
+    end
+
+    # This sets the background attribute of the widget.
+    def setBKattr(attrib)
+      @entry_field.setBKattr(attrib)
+      @scroll_field.setBKattr(attrib)
+    end
+
+    # This destroys the file selector.
+    def destroy
+      self.cleanBindings(:FSELECT)
+
+      # Destroy the other CDK objects
+      @scroll_field.destroy
+      @entry_field.destroy
+
+      # Free up the windows
+      CDK.deleteCursesWindow(@shadow_win)
+      CDK.deleteCursesWindow(@win)
+
+      # Clean the key bindings.
+      # Unregister the object.
+      CDK::SCREEN.unregister(:FSELECT, self)
+    end
+
+    # Currently a wrapper for File.expand_path
+    def self.make_pathname(directory, filename)
+      if filename == '..'
+        return File.expand_path(directory) + '/..'
+      else
+        return File.expand_path(filename, directory)
+      end
+    end
+
+    # Return the plain string that corresponds to an item in dir_contents
+    def contentToPath(content)
+      # XXX direct translation of original but might be redundant
+      temp_chtype = CDK.char2Chtype(content, [], [])
+      temp_char = CDK.chtype2Char(temp_chtype)
+      temp_char = temp_char[0..-1]
+
+      # Create the pathname.
+      result = CDK::FSELECT.make_pathname(@pwd, temp_char)
+
+      return result
+    end
+
+    # Currently a wrapper for File.expand_path
+    def self.expandTilde(filename)
+      return File.expand_path(filename)
+    end
+
+    def destroyInfo
+      @dir_contents = []
+      @file_counter = 0
+    end
+
+    def createList(list, list_size)
+      status = false
+
+      if list_size >= 0
+        newlist = []
+
+        # Copy in the new information
+        status = true
+        (0...list_size).each do |x|
+          newlist << list[x]
+          if newlist[x] == 0
+            status = false
+            break
+          end
+        end
+
+        if status
+          self.destroyInfo
+          @file_counter = list_size
+          @dir_contents = newlist
+        end
+      else
+        self.destroyInfo
+        status = true
+      end
+      return status
+    end
+
+    def focus
+      @entry_field.focus
+    end
+
+    def unfocus
+      @entry_field.unfocus
+    end
+
+    def self.isFullWidth(width)
+      width == CDK::FULL || (Ncurses.COLS != 0 && width >= Ncurses.COLS)
+    end
+
     def position
       super(@win)
     end
@@ -8782,6 +10531,10 @@ module CDK
   end
 
   class MATRIX < CDK::CDKOBJS
+    def initialize
+      super()
+    end
+
     def position
       super(@win)
     end
@@ -8792,6 +10545,10 @@ module CDK
   end
 
   class TEMPLATE < CDK::CDKOBJS
+    def initialize
+      super()
+    end
+
     def position
       super(@win)
     end
