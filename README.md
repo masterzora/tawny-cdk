@@ -9,6 +9,7 @@ Currently implemented widgets:
  * Alphalist
  * Button
  * Buttonbox
+ * Calendar
  * Dialog
  * Entry
  * File Selector
