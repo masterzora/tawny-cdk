@@ -477,7 +477,7 @@ module CDK
                 end
               end
             end
-            (0..adjust).each do |x|
+            (0...adjust).each do |x|
               result << (last_char | attrib)
               used += 1
             end
