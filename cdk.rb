@@ -11503,6 +11503,591 @@ module CDK
     end
   end
 
+  class SLIDER < CDK::CDKOBJS
+    def initialize(cdkscreen, xplace, yplace, title, label, filler,
+        field_width, start, low, high, inc, fast_inc, box, shadow)
+      super()
+      parent_width = cdkscreen.window.getmaxx
+      parent_height = cdkscreen.window.getmaxy
+      bindings = {
+          'u'           => Ncurses::KEY_UP,
+          'U'           => Ncurses::KEY_PPAGE,
+          CDK::BACKCHAR => Ncurses::KEY_PPAGE,
+          CDK::FORCHAR  => Ncurses::KEY_NPAGE,
+          'g'           => Ncurses::KEY_HOME,
+          '^'           => Ncurses::KEY_HOME,
+          'G'           => Ncurses::KEY_END,
+          '$'           => Ncurses::KEY_END,
+      }
+      self.setBox(box)
+      box_height = @border_size * 2 + 1
+
+      # Set some basic values of the widget's data field.
+      @label = []
+      @label_len = 0
+      @label_win = nil
+      high_value_len = self.formattedSize(high)
+
+      # If the field_width is a negative will be COLS-field_width,
+      # otherwise field_width will be the given width.
+      field_width = CDK.setWidgetDimension(parent_width, field_width, 0)
+
+      # Translate the label string to a chtype array.
+      if !(label.nil?) && label.size > 0
+        label_len = []
+        @label = CDK.char2Chtype(label, label_len, [])
+        @label_len = label_len[0]
+        box_width = @label_len + field_width +
+            high_value_len + 2 * @border_size
+      else
+        box_width = field_width + high_value_len + 2 * @border_size
+      end
+
+      old_width = box_width
+      box_width = self.setTitle(title, box_width)
+      horizontal_adjust = (box_width - old_width) / 2
+
+      box_height += @title_lines
+
+      # Make sure we didn't extend beyond the dimensions of the window.
+      box_width = [box_width, parent_width].min
+      box_height = [box_height, parent_height].min
+      field_width = [field_width,
+          box_width - @label_len - high_value_len - 1].min
+
+      # Rejustify the x and y positions if we need to.
+      xtmp = [xplace]
+      ytmp = [yplace]
+      CDK.alignxy(cdkscreen.window, xtmp, ytmp, box_width, box_height)
+      xpos = xtmp[0]
+      ypos = ytmp[0]
+
+      # Make the widget's window.
+      @win = Ncurses::WINDOW.new(box_height, box_width, ypos, xpos)
+
+      # Is the main window nil?
+      if @win.nil?
+        self.destroy
+        return nil
+      end
+
+      # Create the widget's label window.
+      if @label.size > 0
+        @label_win = @win.subwin(1, @label_len,
+            ypos + @title_lines + @border_size,
+            xpos + horizontal_adjust + @border_size)
+        if @label_win.nil?
+          self.destroy
+          return nil
+        end
+      end
+
+      # Create the widget's data field window.
+      @field_win = @win.subwin(1, field_width + high_value_len - 1,
+          ypos + @title_lines + @border_size,
+          xpos + @label_len + horizontal_adjust + @border_size)
+
+      if @field_win.nil?
+        self.destroy
+        return nil
+      end
+      @field_win.keypad(true)
+      @win.keypad(true)
+
+      # Create the widget's data field.
+      @screen = cdkscreen
+      @window = cdkscreen.window
+      @shadow_win = nil
+      @box_width = box_width
+      @box_height = box_height
+      @field_width = field_width - 1
+      @filler = filler
+      @low = low
+      @high = high
+      @current = start
+      @inc = inc
+      @fastinc = fast_inc
+      @accepts_focus = true
+      @input_window = @win
+      @shadow = shadow
+      @field_edit = 0
+
+      # Set the start value.
+      if start < low
+        @current = low
+      end
+
+      # Do we want a shadow?
+      if shadow
+        @shadow_win = Ncurses::WINDOW.new(box_height, box_width,
+            ypos + 1, xpos + 1)
+        if @shadow_win.nil?
+          self.destroy
+          return nil
+        end
+      end
+
+      # Setup the key bindings.
+      bindings.each do |from, to|
+        self.bind(:SLIDER, from, :getc, to)
+      end
+
+      cdkscreen.register(:SLIDER, self)
+    end
+
+    # This allows the person to use the widget's data field.
+    def activate(actions)
+      # Draw the widget.
+      self.draw(@box)
+
+      if actions.nil? || actions.size == 0
+        while true
+          input = self.getch([])
+
+          # Inject the character into the widget.
+          ret = self.inject(input)
+          if @exit_type != :EARLY_EXIT
+            return ret
+          end
+        end
+      else
+        # Inject each character one at a time.
+        actions.each do |action|
+          ret = self.inject(action)
+          if @exit_type != :EARLY_EXIT
+            return ret
+          end
+        end
+      end
+
+      # Set the exit type and return.
+      self.setExitType(0)
+      return -1
+    end
+
+    # Check if the value lies outside the low/high range. If so, force it in.
+    def limitCurrentValue
+      if @current < @low
+        @current = @low
+        CDK.Beep
+      elsif @current > @high
+        @current = @high
+        CDK.Beep
+      end
+    end
+
+    # Move the cursor to the given edit-position.
+    def moveToEditPosition(new_position)
+      return @field_win.wmove(0,
+          @field_width + self.formattedSize(@current) - new_position)
+    end
+
+    # Check if the cursor is on a valid edit-position. This must be one of
+    # the non-blank cells in the field.
+    def validEditPosition(new_position)
+      if new_position <= 0 || new_position >= @field_width
+        return false
+      end
+      if self.moveToEditPosition(new_position) == Ncurses::ERR
+        return false
+      end
+      ch = @field_win.winch
+      if CDK.CharOf(ch) != ' '
+        return true
+      end
+      if new_position > 1
+        # Don't use recursion - only one level is wanted
+        if self.moveToEditPosition(new_position - 1) == Ncurses::ERR
+          return false
+        end
+        ch = @field_win.winch
+        return CDK.CharOf(ch) != ' '
+      end
+      return false
+    end
+
+    # Set the edit position.  Normally the cursor is one cell to the right of
+    # the editable field.  Moving it left, over the field, allows the user to
+    # modify cells by typing in replacement characters for the field's value.
+    def setEditPosition(new_position)
+      if new_position < 0
+        CDK.Beep
+      elsif new_position == 0
+        @field_edit = new_position
+      elsif self.validEditPosition(new_position)
+        @field_edit = new_position
+      else
+        CDK.Beep
+      end
+    end
+
+    # Remove the character from the string at the given column, if it is blank.
+    # Returns true if a change was made.
+    def self.removeChar(string, col)
+      result = false
+      if col >= 0 && string[col] != ' '
+        while col < string.size - 1
+          string[col] = string[col + 1]
+          col += 1
+        end
+        string.chop!
+        result = true
+      end
+      return result
+    end
+
+    # Perform an editing function for the field.
+    def performEdit(input)
+      result = false
+      modify = true
+      base = @field_width
+      need = self.formattedSize(@current)
+      temp = ''
+      col = need - @field_edit
+      scan_fmt = '%d%c'
+
+      adj = if col < 0 then -col else 0 end
+      if adj != 0
+        temp  = ' ' * adj
+      end
+      @field_win.wmove(0, base)
+      @field_win.winnstr(temp, need)
+      temp << ' '
+      if CDK.isChar(input)  # Replace the char at the cursor
+        temp[col] = input.chr
+      elsif input == Ncurses::KEY_BACKSPACE
+        # delete the char before the cursor
+        modify = CDK::SLIDER.removeChar(temp, col - 1)
+      elsif input == Ncurses::KEY_DC
+        # delete the char at the cursor
+        modify = CDK::SLIDER.removeChar(temp, col)
+      else
+        modify = false
+      end
+      if modify &&
+          ((value, test) = temp.scanf(scan_fmt)).size == 2 &&
+          test == ' ' && value >= @low && value <= @high
+        self.setValue(value)
+        result = true
+      end
+      return result
+    end
+
+    def self.Decrement(value, by)
+      if value - by < value
+        value - by
+      else
+        value
+      end
+    end
+
+    def self.Increment(value, by)
+      if value + by > value
+        value + by
+      else
+        value
+      end
+    end
+
+    # This function injects a single character into the widget.
+    def inject(input)
+      pp_return = 1
+      ret = -1
+      complete = false
+
+      # Set the exit type.
+      self.setExitType(0)
+
+      # Draw the field.
+      self.drawField
+
+      # Check if there is a pre-process function to be called.
+      unless @pre_process_func.nil?
+        # Call the pre-process function.
+        pp_return = @pre_process_func.call(:SLIDER, self,
+            @pre_process_data, input)
+      end
+
+      # Should we continue?
+      if pp_return != 0
+        # Check for a key binding.
+        if self.checkBind(:SLIDER, input)
+          complete = true
+        else
+          case input
+          when Ncurses::KEY_LEFT
+            self.setEditPosition(@field_edit + 1)
+          when Ncurses::KEY_RIGHT
+            self.setEditPosition(@field_edit - 1)
+          when Ncurses::KEY_DOWN
+            @current = CDK::SLIDER.Decrement(@current, @inc)
+          when Ncurses::KEY_UP
+            @current = CDK::SLIDER.Increment(@current, @inc)
+          when Ncurses::KEY_PPAGE
+            @current = CDK::SLIDER.Increment(@current, @fastinc)
+          when Ncurses::KEY_NPAGE
+            @current = CDK::SLIDER.Decrement(@current, @fastinc)
+          when Ncurses::KEY_HOME
+            @current = @low
+          when Ncurses::KEY_END
+            @current = @high
+          when CDK::KEY_TAB, CDK::KEY_RETURN, Ncurses::KEY_ENTER
+            self.setExitType(input)
+            ret = @current
+            complete = true
+          when CDK::KEY_ESC
+            self.setExitType(input)
+            complete = true
+          when Ncurses::ERR
+            self.setExitType(input)
+            complete = true
+          when CDK::REFRESH
+            @screen.erase
+            @screen.refresh
+          else
+            if @field_edit != 0
+              if !self.performEdit(input)
+                CDK.Beep
+              end
+            else
+              # The cursor is not within the editable text. Interpret
+              # input as commands.
+            case input
+            when 'd'.ord, '-'.ord
+              return self.inject(Ncurses::KEY_DOWN)
+            when '+'.ord
+              return self.inject(Ncurses::KEY_UP)
+            when 'D'.ord
+              return self.inject(Ncurses::KEY_NPAGE)
+            when '0'.ord
+              return self.inject(Ncurses::KEY_HOME)
+            else
+              CDK.Beep
+            end
+            end
+          end
+        end
+        self.limitCurrentValue
+
+        # Should we call a post-process?
+        if !complete && !(@post_process_func.nil?)
+          @post_process_func.call(:SLIDER, self, @post_process_data, input)
+        end
+      end
+
+      if !complete
+        self.drawField
+        self.setExitType(0)
+      end
+
+      @return_data = 0
+      return ret
+    end
+
+    # This moves the widget's data field to the given location.
+    def move(xplace, yplace, relative, refresh_flag)
+      current_x = @win.getbegx
+      current_y = @win.getbegy
+      xpos = xplace
+      ypos = yplace
+
+      # if this is a relative move, then we will adjust where we want
+      # to move to.
+      if relative
+        xpos = @win.getbegx + xplace
+        ypos = @win.getbegy + yplace
+      end
+
+      # Adjust the window if we need to.
+      xtmp = [xpos]
+      ytmp = [ypos]
+      CDK.alignxy(@screen.window, xtmp, ytmp, @box_width, @box_height)
+      xpos = xtmp[0]
+      ypos = ytmp[0]
+
+      # Get the difference.
+      xdiff = current_x - xpos
+      ydiff = current_y - ypos
+
+      # Move the window to the new location.
+      self.moveCursesWindow(@win, -xdiff, -ydiff)
+      self.moveCursesWindow(@label_win, -xdiff, -ydiff)
+      self.moveCursesWindow(@field_win, -xdiff, -ydiff)
+      self.moveCursesWindow(@shadow_win, -xdiff, -ydiff)
+
+      # Touch the windows so they 'move'
+      CDK::SCREEN.refreshCDKWindow(@screen.window)
+
+      # Redraw the window, if they asked for it.
+      if refresh_flag
+        self.draw(@box)
+      end
+    end
+
+    # This function draws the widget.
+    def draw(box)
+      # Draw the shadow.
+      unless @shadow_win.nil?
+        Draw.drawShadow(@shadow_win)
+      end
+
+      # Box the widget if asked.
+      if box
+        Draw.drawObjBox(@win, self)
+      end
+
+      self.drawTitle(@win)
+
+      # Draw the label.
+      unless @label_win.nil?
+        Draw.writeChtype(@label_win, 0, 0, @label, CDK::HORIZONTAL,
+            0, @label_len)
+        @label_win.wrefresh
+      end
+      @win.wrefresh
+
+      # Draw the field window.
+      self.drawField
+    end
+
+    # This draws the widget.
+    def drawField
+      step = 1.0 * @field_width / (@high - @low)
+
+      # Determine how many filler characters need to be drawn.
+      filler_characters = (@current - @low) * step
+
+      @field_win.werase
+
+      # Add the character to the window.
+      (0...filler_characters).each do |x|
+        @field_win.mvwaddch(0, x, @filler)
+      end
+
+      # Draw the value in the field.
+      Draw.writeCharAttrib(@field_win, @field_width, 0, @current.to_s,
+          Ncurses::A_NORMAL, CDK::HORIZONTAL, 0, @current.to_s.size)
+
+      self.moveToEditPosition(@field_edit)
+      @field_win.wrefresh
+    end
+
+    # This sets the background attribute of the widget.
+    def setBKattr(attrib)
+      # Set the widget's background attribute.
+      @win.wbkgd(attrib)
+      @field_win.wbkgd(attrib)
+      unless @label_win.nil?
+        @label_win.wbkgd(attrib)
+      end
+    end
+
+    # This function destroys the widget.
+    def destroy
+      self.cleanTitle
+      @label = []
+
+      # Clean up the windows.
+      CDK.deleteCursesWindow(@field_win)
+      CDK.deleteCursesWindow(@label_win)
+      CDK.deleteCursesWindow(@shadow_win)
+      CDK.deleteCursesWindow(@win)
+
+      # Clean the key bindings.
+      self.cleanBindings(:SLIDER)
+
+      # Unregister this object.
+      CDK::SCREEN.unregister(:SLIDER, self)
+    end
+
+    # This function erases the widget from the screen.
+    def erase
+      if self.validCDKObject
+        CDK.eraseCursesWindow(@label_win)
+        CDK.eraseCursesWindow(@field_win)
+        CDK.eraseCursesWindow(@lwin)
+        CDK.eraseCursesWindow(@shadow_win)
+      end
+    end
+
+    def formattedSize(value)
+      return value.to_s.size
+    end
+
+    # This function sets the low/high/current values of the widget.
+    def set(low, high, value, box)
+      self.setLowHigh(low, high)
+      self.setValue(value)
+      self.setBox(box)
+    end
+
+    # This sets the widget's value.
+    def setValue(value)
+      @current = value
+      self.limitCurrentValue
+    end
+
+    def getValue
+      return @current
+    end
+
+    # This function sets the low/high values of the widget.
+    def setLowHigh(low, high)
+      # Make sure the values aren't out of bounds.
+      if low <= high
+        @low = low
+        @high = high
+      elsif low > high
+        @low = high
+        @high = low
+      end
+
+      # Make sure the user hasn't done something silly.
+      self.limitCurrentValue
+    end
+
+    def getLowValue
+      return @low
+    end
+
+    def getHighValue
+      return @high
+    end
+
+    def focus
+      self.draw(@box)
+    end
+
+    def unfocus
+      self.draw(@box)
+    end
+
+    def position
+      super(@win)
+    end
+
+    def object_type
+      :SLIDER
+    end
+  end
+
+  class USLIDER < CDK::SLIDER
+    # This may require some functionality shifts, but the original
+    # USlider handled unsigned values.  Since Ruby's typing is different
+    # this shouldn't be overly necessary but is nice for
+    # compatibility/completeness sake.
+  end
+
+  class FSLIDER < CDK::SLIDER
+    # This may require some functionality shifts, but the original
+    # FSlider handled float values.  Since Ruby's typing is different
+    # this shouldn't be overly necessary but is nice for
+    # compatibility/completeness sake.
+    #
+    # That said, unlike FSlider this might require a bit more reworking
+    # to account for the 'digits' parameter and allowing '.' in editing.
+  end
+
   class MATRIX < CDK::CDKOBJS
     def initialize
       super()
@@ -11518,8 +12103,586 @@ module CDK
   end
 
   class TEMPLATE < CDK::CDKOBJS
-    def initialize
+    def initialize(cdkscreen, xplace, yplace, title, label, plate,
+        overlay, box, shadow)
       super()
+      parent_width = cdkscreen.window.getmaxx
+      parent_height = cdkscreen.window.getmaxy
+      box_width = 0
+      box_height = if box then 3 else 1 end
+      plate_len = 0
+
+      if plate.nil? || plate.size == 0
+        return nil
+      end
+
+      self.setBox(box)
+
+      field_width = plate.size + 2 * @border_size
+
+      # Set some basic values of the template field.
+      @label = []
+      @label_len = 0
+      @label_win = nil
+
+      # Translate the label string to achtype array
+      if !(label.nil?) && label.size > 0
+        label_len = []
+        @label = CDK.char2Chtype(label, label_len, [])
+        @label_len = label_len[0]
+      end
+
+      # Translate the char * overlay to a chtype array
+      if !(overlay.nil?) && overlay.size > 0
+        overlay_len = []
+        @overlay = CDK.char2Chtype(overlay, overlay_len, [])
+        @overlay_len = overlay_len[0]
+        @field_attr = @overlay[0] & Ncurses::A_ATTRIBUTES
+      else
+        @overlay = []
+        @overlay_len = 0
+        @field_attr = Ncurses::A_NORMAL
+      end
+
+      # Set the box width.
+      box_width = field_width + @label_len + 2 * @border_size
+
+      old_width = box_width
+      box_width = self.setTitle(title, box_width)
+      horizontal_adjust = (box_width - old_width) / 2
+
+      box_height += @title_lines
+
+      # Make sure we didn't extend beyond the dimensions of the window.
+      box_width = [box_width, parent_width].min
+      box_height = [box_height, parent_height].min
+      field_width = [field_width,
+          box_width - @label_len - 2 * @border_size].min
+
+      # Rejustify the x and y positions if we need to.
+      xtmp = [xplace]
+      ytmp = [yplace]
+      CDK.alignxy(cdkscreen.window, xtmp, ytmp, box_width, box_height)
+      xpos = xtmp[0]
+      ypos = ytmp[0]
+
+      # Make the template window
+      @win = Ncurses::WINDOW.new(box_height, box_width, ypos, xpos)
+
+      # Is the template window nil?
+      if @win.nil?
+        self.destroy
+        return nil
+      end
+      @win.keypad(true)
+
+      # Make the label window.
+      if label.size > 0
+        @label_win = @win.subwin(1, @label_len,
+            ypos + @title_lines + @border_size,
+            xpos + horizontal_adjust + @border_size)
+      end
+
+      # Make the field window
+      @field_win = @win.subwin(1, field_width,
+            ypos + @title_lines + @border_size,
+            xpos + @label_len + horizontal_adjust + @border_size)
+      @field_win.keypad(true)
+
+      # Set up the info field.
+      @plate_len = plate.size
+      @info = ''
+      # Copy the plate to the template
+      @plate = plate.clone
+
+      # Set up the rest of the structure.
+      @screen = cdkscreen
+      @parent = cdkscreen.window
+      @shadow_win = nil
+      @field_width = field_width
+      @box_height = box_height
+      @box_width = box_width
+      @plate_pos = 0
+      @screen_pos = 0
+      @info_pos = 0
+      @min = 0
+      @input_window = @win
+      @accepts_focus = true
+      @shadow = shadow
+      @callbackfn = lambda do |template, input|
+        failed = false
+        change = false
+        moveby = false
+        amount = 0
+        mark = @info_pos
+        have = @info.size
+
+        if input == Ncurses::KEY_LEFT
+          if mark != 0
+            moveby = true
+            amount = -1
+          else
+            failed = true
+          end
+        elsif input == Ncurses::KEY_RIGHT
+          if mark < @info.size
+            moveby = true
+            amount = 1
+          else
+            failed = true
+          end
+        else
+          test = @info.clone
+          if input == Ncurses::KEY_BACKSPACE
+            if mark != 0
+              front = @info[0...mark-1] || ''
+              back = @info[mark..-1] || ''
+              test = front + back
+              change = true
+              amount = -1
+            else
+              failed = true
+            end
+          elsif input == Ncurses::KEY_DC
+            if mark < @info.size
+              front = @info[0...mark] || ''
+              back = @info[mark+1..-1] || ''
+              test = front + back
+              change = true
+              amount = 0
+            else
+              failed = true
+            end
+          elsif CDK.isChar(input) && @plate_pos < @plate.size
+            test[mark] = input.chr
+            change = true
+            amount = 1
+          else
+            failed = true
+          end
+
+          if change
+            if self.validTemplate(test)
+              @info = test
+              self.drawField
+            else
+              failed = true
+            end
+          end
+        end
+
+        if failed
+          CDK.Beep
+        elsif change || moveby
+          @info_pos += amount
+          @plate_pos += amount
+          @screen_pos += amount
+
+          self.adjustCursor(amount)
+        end
+      end
+
+      # Do we need to create a shadow?
+      if shadow
+        @shadow_win = Ncurses::WINDOW.new(box_height, box_width,
+            ypos + 1, xpos + 1)
+      end
+
+      cdkscreen.register(:TEMPLATE, self)
+    end
+
+    # This actually manages the tempalte widget
+    def activate(actions)
+      self.draw(@box)
+
+      if actions.nil? || actions.size == 0
+        while true
+          input = self.getch([])
+
+          # Inject each character into the widget.
+          ret = self.inject(input)
+          if @exit_type != :EARLY_EXIT
+            return ret
+          end
+        end
+      else
+        # Inject each character one at a time.
+        actions.each do |action|
+          ret = self.inject(action)
+          if @exit_type != :EARLY_EXIT
+            return ret
+          end
+        end
+      end
+
+      # Set the exit type and return.
+      self.setExitType(0)
+      return ret
+    end
+
+    # This injects a character into the widget.
+    def inject(input)
+      pp_return = 1
+      complete = false
+      ret = -1
+
+      self.setExitType(0)
+
+      # Move the cursor.
+      self.drawField
+
+      # Check if there is a pre-process function to be called.
+      unless @pre_process_func.nil?
+        pp_return = @pre_process_func.call(:TEMPLATE, self,
+            @pre_process_data, input)
+      end
+
+      # Should we continue?
+      if pp_return != 0
+        # Check a predefined binding
+        if self.checkBind(:TEMPLATE, input)
+          complete = true
+        else
+          case input
+          when CDK::ERASE
+            if @info.size > 0
+              self.clean
+              self.drawField
+            end
+          when CDK::CUT
+            if @info.size > 0
+              @@g_paste_buffer = @info.clone
+              self.clean
+              self.drawField
+            else
+              CDK.Beep
+            end
+          when CDK::COPY
+            if @info.size > 0
+              @@g_paste_buffer = @info.clone
+            else
+              CDK.Beep
+            end
+          when CDK::PASTE
+            if @@g_paste_buffer.size > 0
+              self.clean
+
+              # Start inserting each character one at a time.
+              (0...@@g_paste_buffer.size).each do |x|
+                @callbackfn.call(self, @@g_paste_buffer[x])
+              end
+              self.drawField
+            else
+              CDK.Beep
+            end
+          when CDK::KEY_TAB, CDK::KEY_RETURN, Ncurses::KEY_ENTER
+            if @info.size < @min
+              CDK.Beep
+            else
+              self.setExitType(input)
+              ret = @info
+              complete = true
+            end
+          when CDK::KEY_ESC
+            self.setExitType(input)
+            complete = true
+          when Ncurses::ERR
+            self.setExitType(input)
+            complete = true
+          when CDK::REFRESH
+            @screen.erase
+            @screen.refresh
+          else
+            @callbackfn.call(self, input)
+          end
+        end
+
+        # Should we call a post-process?
+        if !complete && !(@post_process_func.nil?)
+          @post_process_func.call(:TEMPLATE, self, @post_process_data, input)
+        end
+      end
+
+      if !complete
+        self.setExitType(0)
+      end
+
+      @return_data = ret
+      return ret
+    end
+
+    def validTemplate(input)
+      pp = 0
+      ip = 0
+      while ip < input.size && pp < @plate.size
+        newchar = input[ip]
+        while pp < @plate.size && !CDK::TEMPLATE.isPlateChar(@plate[pp])
+          pp += 1
+        end
+        if pp == @plate.size
+          return false
+        end
+
+        # Check if the input matches the plate
+        if CDK.digit?(newchar) && 'ACc'.include?(@plate[pp])
+          return false
+        end
+        if !CDK.digit?(newchar) && @plate[pp] == '#'
+          return false
+        end
+
+        # Do we need to convert the case?
+        if @plate[pp] == 'C' || @plate[pp] == 'X'
+          newchar = newchar.upcase
+        elsif @plate[pp] == 'c' || @plate[pp] == 'x'
+          newchar = newchar.downcase
+        end
+        input[ip] = newchar
+        ip += 1
+        pp += 1
+      end
+      return true
+    end
+
+    # Return a mixture of the plate-overlay and field-info
+    def mix
+      mixed_string = ''
+      plate_pos = 0
+      info_pos = 0
+
+      if @info.size > 0
+        mixed_string = ''
+        while plate_pos < @plate_len && info_pos < @info.size
+          mixed_string << if CDK::TEMPLATE.isPlateChar(@plate[plate_pos])
+                          then info_pos += 1; @info[info_pos - 1]
+                          else @plate[plate_pos]
+                          end
+          plate_pos += 1
+        end
+      end
+
+      return mixed_string
+    end
+
+    # Return the field_info from the mixed string.
+    def unmix(info)
+      pos = 0
+      unmixed_string = ''
+
+      while pos < @info.size
+        if CDK::TEMPLATE.isPlateChar(@plate[pos])
+          unmixed_string << info[pos]
+        end
+        pos += 1
+      end
+
+      return unmixed_string
+    end
+
+    # Move the template field to the given location.
+    def move(xplace, yplace, relative, refresh_flag)
+      current_x = @win.getbegx
+      current_y = @win.getbegy
+      xpos = xplace
+      ypos = yplace
+
+      # If this is a relative move, then we will adjust where we want
+      # to move to.
+      if relative
+        xpos = @win.getbegx + xplace
+        ypos = @win.getbegy + yplace
+      end
+
+      # Adjust the window if we need to.
+      xtmp = [xpos]
+      ytmp = [ypos]
+      CDK.alignxy(@screen.window, xtmp, ytmp, @box_width, @box_height)
+      xpos = xtmp[0]
+      ypos = ytmp[0]
+
+      # Get the difference.
+      xdiff = current_x - xpos
+      ydiff = current_y - ypos
+
+      # Move the window to the new location.
+      CDK.moveCursesWindow(@win, -xdiff, -ydiff)
+      CDK.moveCursesWindow(@label_win, -xdiff, -ydiff)
+      CDK.moveCursesWindow(@field_win, -xdiff, -ydiff)
+      CDK.moveCursesWindow(@shadow_win, -xdiff, -ydiff)
+
+      # Touch the windows so they 'move'.
+      CDK::SCREEN.refreshCDKWindow(@screen.window)
+
+      # Redraw the window, if they asked for it.
+      if refresh_flag
+        self.draw(@box)
+      end
+    end
+
+    # Draw the template widget.
+    def draw(box)
+      # Do we need to draw the shadow.
+      unless @shadow_win.nil?
+        Draw.drawShadow(@shadow_win)
+      end
+
+      # Box it if needed
+      if box
+        Draw.drawObjBox(@win, self)
+      end
+
+      self.drawTitle(@win)
+
+      @win.wrefresh
+
+      self.drawField
+    end
+
+    # Draw the template field
+    def drawField
+      field_color = 0
+      
+      # Draw in the label and the template object.
+      unless @label_win.nil?
+        Draw.writeChtype(@label_win, 0, 0, @label, CDK::HORIZONTAL,
+            0, @label_len)
+        @label_win.wrefresh
+      end
+
+      # Draw in the template
+      if @overlay.size > 0
+        Draw.writeChtype(@field_win, 0, 0, @overlay, CDK::HORIZONTAL,
+            0, @overlay_len)
+      end
+
+      # Adjust the cursor.
+      if @info.size > 0
+        pos = 0
+        (0...[@field_width, @plate.size].min).each do |x|
+          if CDK::TEMPLATE.isPlateChar(@plate[x]) && pos < @info.size
+            field_color = @overlay[x] & Ncurses::A_ATTRIBUTES
+            @field_win.mvwaddch(0, x, @info[pos].ord | field_color)
+            pos += 1
+          end
+        end
+        @field_win.wmove(0, @screen_pos)
+      else
+        self.adjustCursor(1)
+      end
+      @field_win.wrefresh
+    end
+
+    # Adjust the cursor for the template
+    def adjustCursor(direction)
+      while @plate_pos < [@field_width, @plate.size].min &&
+          !CDK::TEMPLATE.isPlateChar(@plate[@plate_pos])
+        @plate_pos += direction
+        @screen_pos += direction
+      end
+      @field_win.wmove(0, @screen_pos)
+      @field_win.wrefresh
+    end
+
+    # Set the background attribute of the widget.
+    def setBKattr(attrib)
+      @win.wbkgd(attrib)
+      @field_win.wbkgd(attrib)
+      unless @label_win.nil?
+        @label_win.wbkgd(attrib)
+      end
+    end
+
+    # Destroy this widget.
+    def destroy
+      self.cleanTitle
+
+      # Delete the windows
+      CDK.deleteCursesWindow(@field_win)
+      CDK.deleteCursesWindow(@label_win)
+      CDK.deleteCursesWindow(@shadow_win)
+      CDK.deleteCursesWindow(@win)
+
+      # Clean the key bindings.
+      self.cleanBindings(:TEMPLATE)
+
+      CDK::SCREEN.unregister(:TEMPLATE, self)
+    end
+
+    # Erase the widget.
+    def erase
+      if self.validCDKObject
+        CDK.eraseCursesWindow(@field_win)
+        CDK.eraseCursesWindow(@label_win)
+        CDK.eraseCursesWindow(@shadow_win)
+        CDK.eraseCursesWindow(@win)
+      end
+    end
+
+    # Set the value given to the template
+    def set(new_value, box)
+      self.setValue(new_value)
+      self.setBox(box)
+    end
+
+    # Set the value given to the template.
+    def setValue(new_value)
+      len = 0
+
+      # Just to be sure, let's make sure the new value isn't nil
+      if new_value.nil?
+        self.clean
+        return
+      end
+
+      # Determine how many characters we need to copy.
+      copychars = [@new_value.size, @field_width, @plate.size].min
+
+      @info = new_value[0...copychars]
+
+      # Use the function which handles the input of the characters.
+      (0...new_value.size).each do |x|
+        @callbackfn.call(self, new_value[x].ord)
+      end
+    end
+
+    def getValue
+      return @info
+    end
+
+    # Set the minimum number of characters to enter into the widget.
+    def setMin(min)
+      if min >= 0
+        @min = min
+      end
+    end
+
+    def getMin
+      return @min
+    end
+
+    # Erase the information in the template widget.
+    def clean
+      @info = ''
+      @screen_pos = 0
+      @info_pos = 0
+      @plaste_pos = 0
+    end
+
+    # Set the callback function for the widget.
+    def setCB(callback)
+      @callbackfn = callback
+    end
+
+    def focus
+      self.draw(@box)
+    end
+
+    def unfocus
+      self.draw(@box)
+    end
+
+    def self.isPlateChar(c)
+      '#ACcMXz'.include?(c.chr)
     end
 
     def position
@@ -11779,6 +12942,9 @@ module CDK
         temp[col] = input.chr
       elsif input == Ncurses::KEY_BACKSPACE
         # delete the char before the cursor
+        modify = CDK::SCALE.removeChar(temp, col - 1)
+      elsif input == Ncurses::KEY_DC
+        # delete the char at the cursor
         modify = CDK::SCALE.removeChar(temp, col)
       else
         modify = false
@@ -12079,14 +13245,14 @@ module CDK
     end
   end
 
-  class UScale < CDK::SCALE
+  class USCALE < CDK::SCALE
     # This may require some functionality shifts, but the original
     # UScale handled unsigned values.  Since Ruby's typing is different
     # this shouldn't be overly necessary but is nice for
     # compatibility/completeness sake.
   end
 
-  class FScale < CDK::SCALE
+  class FSCALE < CDK::SCALE
     # This may require some functionality shifts, but the original
     # FScale handled float values.  Since Ruby's typing is different
     # this shouldn't be overly necessary but is nice for
@@ -12096,7 +13262,7 @@ module CDK
     # to account for the 'digits' parameter and allowing '.' in editing.
   end
 
-  class DScale < CDK::SCALE
+  class DSCALE < CDK::SCALE
     # This may require some functionality shifts, but the original
     # DScale handled double values.  Since Ruby's typing is different
     # this shouldn't be overly necessary but is nice for

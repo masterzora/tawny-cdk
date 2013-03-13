@@ -24,6 +24,8 @@ Currently implemented widgets:
  * Scrolling List
  * Scrolling Window 
  * Selection List
+ * Slider
+ * Template
  * Viewer
 
 Original C project page: http://invisible-island.net/cdk/
