@@ -10273,8 +10273,7 @@ module CDK
 
     # This returns what day of the week the month starts on.
     def self.getMonthStartWeekday(year, month)
-      return Time.mktime(CDK::CALENDAR.YEAR2INDEX(year), month,
-          1, 10, 0, 0).wday
+      return Time.mktime(year, month, 1, 10, 0, 0).wday
     end
 
     # This function returns a 1 if it's a leap year and 0 if not.
@@ -10466,8 +10465,7 @@ module CDK
     # This returns what day of the week the month starts on.
     def getCurrentTime
       # Determine the current time and determine if we are in DST.
-      return Time.mktime(CDK::CALENDAR.YEAR2INDEX(@year), @month,
-          @day, 0, 0, 0).gmtime
+      return Time.mktime(@year, @month, @day, 0, 0, 0).gmtime
     end
 
     def focus
