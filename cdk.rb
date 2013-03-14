@@ -337,7 +337,7 @@ module CDK
 
           # Pull out the bullet marker.
           while x < string.size and string[x] != R_MARKER
-            result << string[x].ord | Ncurses::A_BOLD
+            result << (string[x].ord | Ncurses::A_BOLD)
             x += 1
           end
           adjust = 1
@@ -2407,6 +2407,19 @@ module CDK
 
     # This function destroys
     def destroy
+      self.cleanTitle
+
+      # Clean up the windows.
+      CDK.deleteCursesWindow(@scrollbar_win)
+      CDK.deleteCursesWindow(@shadow_win)
+      CDK.deleteCursesWindow(@list_win)
+      CDK.deleteCursesWindow(@win)
+
+      # Clean the key bindings.
+      self.cleanBindings(:SCROLL)
+
+      # Unregister this object
+      CDK::SCREEN.unregister(:SCROLL, self)
     end
 
     # This function erases the scrolling list from the screen.
@@ -2836,7 +2849,7 @@ module CDK
     # This destroys the widget.
     def destroy
       # Clean up the windows.
-      CDK.deleteCursesWindow(@shadow_Win)
+      CDK.deleteCursesWindow(@shadow_win)
       CDK.deleteCursesWindow(@win)
 
       # Clean the key bindings.
@@ -3270,7 +3283,7 @@ module CDK
     end
 
     def focus
-      self.drawTest
+      self.drawText
       @win.wrefresh
     end
 
@@ -5055,16 +5068,15 @@ module CDK
       @last_selection = -1
       @menu_pos = menu_pos
 
-      # TODO: Don't overallocate this space
-      @pull_win = [nil] * CDK::MENU::MAX_MENU_ITEMS
-      @title_win = [nil] * CDK::MENU::MAX_MENU_ITEMS
-      @title = [''] * CDK::MENU::MAX_MENU_ITEMS
-      @title_len = [0] * CDK::MENU::MAX_MENU_ITEMS
-      @sublist = (1..CDK::MENU::MAX_MENU_ITEMS).map {
-          [nil] * CDK::MENU::MAX_SUB_ITEMS}.compact
-      @sublist_len = (1..CDK::MENU::MAX_MENU_ITEMS).map {
-          [0] * CDK::MENU::MAX_SUB_ITEMS}.compact
-      @subsize = [0] * CDK::MENU::MAX_MENU_ITEMS
+      @pull_win = [nil] * menu_items
+      @title_win = [nil] * menu_items
+      @title = [''] * menu_items
+      @title_len = [0] * menu_items
+      @sublist = (1..menu_items).map {[nil] * subsize.max}.compact
+      @sublist_len = (1..menu_items).map {
+          [0] * subsize.max}.compact
+      @subsize = [0] * menu_items
+
 
       # Create the pull down menus.
       (0...menu_items).each do |x|
@@ -9463,10 +9475,10 @@ module CDK
       # Try to open the command.
       # XXX This especially needs exception handling given how Ruby
       # implements popen
-      unless (ps = popen(command, 'r')).nil?
+      unless (ps = IO.popen(command.split, 'r')).nil?
         # Start reading.
         until (temp = ps.gets).nil?
-          if temp.len != 0 && temp[-1] == '\n'
+          if temp.size != 0 && temp[-1] == '\n'
             temp = temp[0...-1]
           end
           # Add the line to the scrolling window.
@@ -15673,7 +15685,7 @@ module CDK
       screen.exit_status = CDK::SCREEN::EXITCANCEL
     end
 
-    def Traverse.exitOKCDKScrenOf(obj)
+    def Traverse.exitOKCDKScreenOf(obj)
       exitOKCDKScreen(obj.screen)
     end
 
@@ -15685,7 +15697,7 @@ module CDK
       resetCDKScreen(obj.screen)
     end
 
-    # Returns the objects on which the focus lies.
+    # Returns the object on which the focus lies.
     def Traverse.getCDKFocusCurrent(screen)
       result = nil
       n = screen.object_focus
@@ -15838,6 +15850,8 @@ module CDK
             screen.exit_status == CDK::SCREEN::NOEXIT
           function = []
           key = curobj.getch(function)
+
+          screen.popupLabel([key.to_s], 1)
 
           # TODO look at more direct way to do this
           check_menu_key = lambda do |key_code, function_key|
