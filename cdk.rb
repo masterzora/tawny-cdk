@@ -1468,7 +1468,7 @@ module CDK
     # This pops up a dialog box.
     def popupDialog(mesg, mesg_count, buttons, button_count)
       # Create the dialog box.
-      popup = CDK::DIALOG.new(screen, CDK::CENTER, CDK::CENTER,
+      popup = CDK::DIALOG.new(self, CDK::CENTER, CDK::CENTER,
           mesg, mesg_count, buttons, button_count, Ncurses::A_REVERSE,
           true, true, false)
 
@@ -1482,8 +1482,8 @@ module CDK
       popup.destroy
 
       # Clean the screen.
-      screen.erase
-      screen.refresh
+      self.erase
+      self.refresh
 
       return choice
     end
