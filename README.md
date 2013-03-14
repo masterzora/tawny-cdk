@@ -17,6 +17,7 @@ Currently implemented widgets:
  * Histogram
  * Item List
  * Label
+ * Matrix
  * Marquee
  * Menu
  * Multiple Line Entry

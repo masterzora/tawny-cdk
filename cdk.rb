@@ -2954,7 +2954,7 @@ module CDK
       # Rejustify the x and y positions if we need to.
       xtmp = [xpos]
       ytmp = [ypos]
-      CDK.alignxy(cdkscreen.window xtmp, ytmp, box_width, box_height)
+      CDK.alignxy(cdkscreen.window, xtmp, ytmp, box_width, box_height)
       xpos = xtmp[0]
       ypos = ytmp[0]
 
@@ -4641,6 +4641,7 @@ module CDK
   class GRAPH < CDK::CDKOBJS
     def initialize(cdkscreen, xplace, yplace, height, width,
         title, xtitle, ytitle)
+      super()
       parent_width = cdkscreen.window.getmaxx
       parent_height = cdkscreen.window.getmaxy
 
@@ -5027,6 +5028,7 @@ module CDK
     MAX_SUB_ITEMS = 98
 
     attr_reader :current_title, :current_subtitle
+    attr_reader :sublist
 
     def initialize(cdkscreen, menu_list, menu_items, subsize,
         menu_location, menu_pos, title_attr, subtitle_attr)
@@ -12532,7 +12534,6 @@ module CDK
       need = self.formattedSize(@current)
       temp = ''
       col = need - @field_edit
-      scan_fmt = '%d%c'
 
       adj = if col < 0 then -col else 0 end
       if adj != 0
@@ -12553,7 +12554,7 @@ module CDK
         modify = false
       end
       if modify &&
-          ((value, test) = temp.scanf(scan_fmt)).size == 2 &&
+          ((value, test) = temp.scanf(self.SCAN_FMT)).size == 2 &&
           test == ' ' && value >= @low && value <= @high
         self.setValue(value)
         result = true
@@ -12850,6 +12851,10 @@ module CDK
       self.draw(@box)
     end
 
+    def SCAN_FMT
+      '%d%c'
+    end
+
     def position
       super(@win)
     end
@@ -12860,20 +12865,72 @@ module CDK
   end
 
   class USLIDER < CDK::SLIDER
-    # This may require some functionality shifts, but the original
-    # USlider handled unsigned values.  Since Ruby's typing is different
-    # this shouldn't be overly necessary but is nice for
-    # compatibility/completeness sake.
+    # The original USlider handled unsigned values.
+    # Since Ruby's typing is different this is really just SLIDER
+    # but is nice it's nice to have this for compatibility/completeness
+    # sake.
+
+    def object_type
+      :USLIDER
+    end
   end
 
   class FSLIDER < CDK::SLIDER
-    # This may require some functionality shifts, but the original
-    # FSlider handled float values.  Since Ruby's typing is different
-    # this shouldn't be overly necessary but is nice for
-    # compatibility/completeness sake.
-    #
-    # That said, unlike FSlider this might require a bit more reworking
-    # to account for the 'digits' parameter and allowing '.' in editing.
+    def initialize(cdkscreen, xplace, yplace, title, label, filler,
+        field_width, start, low, high, inc, fast_inc, digits, box, shadow)
+      @digits = digits
+      super(cdkscreen, xplace, yplace, title, label, filler, field_width,
+          start, low, high, inc, fast_inc, box, shadow)
+    end
+
+    # This draws the widget.
+    def drawField
+      step = 1.0 * @field_width / (@high - @low)
+
+      # Determine how many filler characters need to be drawn.
+      filler_characters = (@current - @low) * step
+
+      @field_win.werase
+
+      # Add the character to the window.
+      (0...filler_characters).each do |x|
+        @field_win.mvwaddch(0, x, @filler)
+      end
+
+      # Draw the value in the field.
+      digits = [@digits, 30].min
+      format = '%%.%if' % [digits]
+      temp = format % [@current]
+
+      Draw.writeCharAttrib(@field_win, @field_width, 0, temp,
+          Ncurses::A_NORMAL, CDK::HORIZONTAL, 0, temp.size)
+
+      self.moveToEditPosition(@field_edit)
+      @field_win.wrefresh
+    end
+
+    def formattedSize(value)
+      digits = [@digits, 30].min
+      format = '%%.%if' % [digits]
+      temp = format % [value]
+      return temp.size
+    end
+
+    def setDigits(digits)
+      @digits = [0, digits].max
+    end
+
+    def getDigits
+      return @digits
+    end
+
+    def SCAN_FMT
+      '%g%c'
+    end
+
+    def object_type
+      :FSLIDER
+    end
   end
 
   class MATRIX < CDK::CDKOBJS
@@ -14815,10 +14872,10 @@ module CDK
 
       # Setup the key bindings.
       bindings.each do |from, to|
-        self.bind(:SCALE, from, :getc, to)
+        self.bind(self.object_type, from, :getc, to)
       end
 
-      cdkscreen.register(:SCALE, self)
+      cdkscreen.register(self.object_type, self)
     end
 
     # This allows the person to use the widget's data field.
@@ -14931,7 +14988,6 @@ module CDK
       need = @field_width
       temp = ''
       col = need - @field_edit - 1
-      scan_fmt = '%d%c'
 
       @field_win.wmove(0, base)
       @field_win.winnstr(temp, need)
@@ -14948,7 +15004,7 @@ module CDK
         modify = false
       end
       if modify &&
-          ((value, test) = temp.scanf(scan_fmt)).size == 2 &&
+          ((value, test) = temp.scanf(self.SCAN_FMT)).size == 2 &&
           test == ' ' &&
           value >= @low && value <= @high
         self.setValue(value)
@@ -14989,14 +15045,14 @@ module CDK
       # Check if there is a pre-process function to be called.
       unless @pre_process_func.nil?
         # Call the pre-process function.
-        pp_return = @pre_process_func.call(:SCALE, self,
+        pp_return = @pre_process_func.call(self.object_type, self,
             @pre_process_data, input)
       end
 
       # Should we continue?
       if pp_return != 0
         # Check for a key bindings.
-        if self.checkBind(:SCALE, input)
+        if self.checkBind(self.object_type, input)
           complete = true
         else
           case input
@@ -15056,7 +15112,8 @@ module CDK
 
         # Should we call a post-process?
         if !complete && !(@post_process_func).nil?
-          @post_process_func.call(:SCALE, self, @post_process_data, input)
+          @post_process_func.call(self.object_type, self,
+              @post_process_data, input)
         end
       end
 
@@ -15170,10 +15227,10 @@ module CDK
       CDK.deleteCursesWindow(@win)
 
       # Clean the key bindings.
-      self.cleanBindings(:SCALE)
+      self.cleanBindings(self.object_type)
 
       # Unregister this object
-      CDK::SCREEN.unregister(:SCALE, self)
+      CDK::SCREEN.unregister(self.object_type, self)
     end
 
     # This function erases the widget from the screen.
@@ -15238,36 +15295,75 @@ module CDK
       super(@win)
     end
 
+    def SCAN_FMT
+      '%d%c'
+    end
+
     def object_type
       :SCALE
     end
   end
 
   class USCALE < CDK::SCALE
-    # This may require some functionality shifts, but the original
-    # UScale handled unsigned values.  Since Ruby's typing is different
-    # this shouldn't be overly necessary but is nice for
-    # compatibility/completeness sake.
+    # The original UScale handled unsigned values.
+    # Since Ruby's typing is different this is really just SCALE
+    # but is nice it's nice to have this for compatibility/completeness
+    # sake.
+
+    def object_type
+      :USCALE
+    end
   end
 
   class FSCALE < CDK::SCALE
-    # This may require some functionality shifts, but the original
-    # FScale handled float values.  Since Ruby's typing is different
-    # this shouldn't be overly necessary but is nice for
-    # compatibility/completeness sake.
-    #
-    # That said, unlike UScale this might require a bit more reworking
-    # to account for the 'digits' parameter and allowing '.' in editing.
+    def initialize(cdkscreen, xplace, yplace, title, label, field_attr,
+        field_width, start, low, high, inc, fast_inc, digits, box, shadow)
+      @digits = digits
+      super(cdkscreen, xplace, yplace, title, label, field_attr, field_width,
+          start, low, high, inc, fast_inc, box, shadow)
+    end
+
+    def drawField
+      @field_win.werase
+
+      # Draw the value in the field.
+      digits = [@digits, 30].min
+      format = '%%.%if' % [digits]
+      temp = format % [@current]
+      
+      Draw.writeCharAttrib(@field_win,
+          @field_width - temp.size - 1, 0, temp, @field_attr,
+          CDK::HORIZONTAL, 0, temp.size)
+
+      self.moveToEditPosition(@field_edit)
+      @field_win.wrefresh
+    end
+
+    def setDigits(digits)
+      @digits = [0, digits].max
+    end
+
+    def getDigits
+      return @digits
+    end
+
+    def SCAN_FMT
+      '%g%c'
+    end
+
+    def object_type
+      :FSCALE
+    end
   end
 
-  class DSCALE < CDK::SCALE
-    # This may require some functionality shifts, but the original
-    # DScale handled double values.  Since Ruby's typing is different
-    # this shouldn't be overly necessary but is nice for
-    # compatibility/completeness sake.
-    #
-    # That said, unlike UScale this might require a bit more reworking
-    # to account for the 'digits' parameter and allowing '.' in editing.
+  class DSCALE < CDK::FSCALE
+    # The original DScale handled unsigned values.
+    # Since Ruby's typing is different this is really just FSCALE
+    # but is nice it's nice to have this for compatibility/completeness
+    # sake.
+    def object_type
+      :DSCALE
+    end
   end
   
   module Draw
@@ -15714,10 +15810,11 @@ module CDK
         setFocus(curobj)
       else
         # not everyone wants menus, so we make them optional here
-        if !(func_menu_key.nil?) && func_menu_key.call(key_code, function_key)
+        if !(func_menu_key.nil?) &&
+            (func_menu_key.call(key_code, function_key) != 0)
           # find and enable drop down menu
           screen.object.each do |object|
-            if object.object_type == :MENU
+            if !(object.nil?) && object.object_type == :MENU
               Traverse.handleMenu(screen, object, curobj)
             end
           end
@@ -15795,8 +15892,8 @@ module CDK
 
     def Traverse.switchFocus(newobj, oldobj)
       if oldobj != newobj
-        oldobj.unsetFocus
-        newobj.setFocus
+        Traverse.unsetFocus(oldobj)
+        Traverse.setFocus(newobj)
       end
       return newobj
     end
@@ -15834,14 +15931,18 @@ module CDK
     # Save data in widgets on a screen
     def Traverse.saveDataCDKScreen(screen)
       screen.object.each do |object|
-        screen.object[i].saveData
+        unless object.nil?
+          object.saveData
+        end
       end
     end
 
     # Refresh data in widgets on a screen
     def Traverse.refreshDataCDKScreen(screen)
       screen.object.each do |object|
-        screen.object[i].refreshData
+        unless object.nil?
+          object.refreshData
+        end
       end
     end
   end
