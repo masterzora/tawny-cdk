@@ -1,6 +1,6 @@
 #!/usr/bin/env ruby
-require '../cdk'
 require 'ostruct'
+require_relative '../lib/cdk'
 
 class Rolodex
   MAXGROUPS = 100

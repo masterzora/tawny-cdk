@@ -1,7 +1,7 @@
 #!/usr/bin/env ruby
-require '../cdk'
 require 'optparse'
 require 'fileutils'
+require_relative '../lib/cdk'
 
 class Vinstall
   FPUsage = '-f filename [-s source directory] [-d destination directory]' <<
@@ -92,7 +92,7 @@ class Vinstall
 
     # Make sure we have everything we need.
     if filename == ''
-      $stderr.puts 'Usage: %s %s' % [ARGV[0], Vinstall::FPUsage]
+      $stderr.puts 'Usage: %s %s' % [File.basename($PROGRAM_NAME), Vinstall::FPUsage]
       exit  # EXIT_FAILURE
     end
 

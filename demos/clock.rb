@@ -1,6 +1,6 @@
 #!/usr/bin/env ruby
-require '../cdk'
 require 'optparse'
+require_relative '../lib/cdk'
 
 class Clock
   def Clock.main

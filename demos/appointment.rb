@@ -1,7 +1,7 @@
 #!/usr/bin/env ruby
-require '../cdk'
 require 'optparse'
 require 'ostruct'
+require_relative '../lib/cdk'
 
 class Appointment
   MAX_MARKERS = 2000

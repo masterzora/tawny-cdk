@@ -1,7 +1,7 @@
 #!/usr/bin/env ruby
-require '../cdk'
 require 'ostruct'
 require 'optparse'
+require_relative '../lib/cdk'
 
 class Command
   MAXHISTORY = 5000

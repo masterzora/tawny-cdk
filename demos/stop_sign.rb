@@ -1,5 +1,5 @@
 #!/usr/bin/env ruby
-require '../cdk'
+require_relative '../lib/cdk'
 
 class StopSign
   def StopSign.main
