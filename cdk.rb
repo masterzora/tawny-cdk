@@ -174,7 +174,12 @@ module CDK
 
   # This reads a file and sticks it into the list provided.
   def CDK.readFile(filename, array)
-    fd = File.new(filename, "r")  # TODO add in error handling
+    begin
+      fd = File.new(filename, "r")
+    rescue
+      return -1
+    end
+
     lines = fd.readlines.map do |line|
       if line.size > 0 && line[-1] == "\n"
         line[0...-1]
@@ -15848,8 +15853,6 @@ module CDK
             screen.exit_status == CDK::SCREEN::NOEXIT
           function = []
           key = curobj.getch(function)
-
-          screen.popupLabel([key.to_s], 1)
 
           # TODO look at more direct way to do this
           check_menu_key = lambda do |key_code, function_key|
