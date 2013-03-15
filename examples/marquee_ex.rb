@@ -1,5 +1,5 @@
 #!/usr/bin/env ruby
-require './example'
+require_relative 'example'
 
 class MarqueeExample < Example
   def MarqueeExample.parse_opts(opts, params)

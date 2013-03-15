@@ -1,5 +1,5 @@
 #!/usr/bin/env ruby
-require './example'
+require_relative 'example'
 
 class RaiseCDKObjectExample < Example
   def RaiseCDKObjectExample.MY_LABEL(obj)

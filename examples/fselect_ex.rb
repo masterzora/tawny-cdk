@@ -1,6 +1,6 @@
 #!/usr/bin/env ruby
-require './example'
 require 'etc'
+require_relative 'example'
 
 class FselectExample < CLIExample
   @@my_undo_list = []

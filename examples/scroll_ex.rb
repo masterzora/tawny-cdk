@@ -1,5 +1,5 @@
 #!/usr/bin/env ruby
-require './example'
+require_relative 'example'
 
 class ScrollExample < CLIExample
   @@count = 0

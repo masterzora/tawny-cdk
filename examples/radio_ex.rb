@@ -1,5 +1,5 @@
 #!/usr/bin/env ruby
-require './example'
+require_relative 'example'
 
 class RadioExample < CLIExample
   def RadioExample.parse_opts(opts, params)

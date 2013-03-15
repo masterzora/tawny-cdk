@@ -1,6 +1,6 @@
 #!/usr/bin/env ruby
-require './example'
 require 'etc'
+require_relative 'example'
 
 class SelectionExample < CLIExample
   def SelectionExample.parse_opts(opts, params)

@@ -1,5 +1,5 @@
 #!/usr/bin/env ruby
-require './example'
+require_relative 'example'
 
 class FScaleExample < Example
   def FScaleExample.parse_opts(opts, param)

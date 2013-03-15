@@ -1,5 +1,5 @@
 #!/usr/bin/env ruby
-require './example'
+require_relative 'example'
 
 class Viewer2Example < CLIExample
   def Viewer2Example.parse_opts(opts, params)

@@ -1,5 +1,5 @@
 #!/usr/bin/env ruby
-require './example'
+require_relative 'example'
 
 class TemplateExample < Example
   def TemplateExample.parse_opts(opts, param)

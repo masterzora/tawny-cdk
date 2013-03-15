@@ -1,5 +1,5 @@
 #!/usr/bin/env ruby
-require './example'
+require_relative 'example'
 
 class USliderExample < Example
   def USliderExample.parse_opts(opts, param)

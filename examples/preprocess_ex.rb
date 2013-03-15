@@ -1,5 +1,5 @@
 #!/usr/bin/env ruby
-require './example'
+require_relative 'example'
 
 class PreProcessExample < Example
   # This program demonstrates the Cdk preprocess feature.

@@ -1,5 +1,5 @@
 #!/usr/bin/env ruby
-require './example'
+require_relative 'example'
 
 class HistogramExample < CLIExample
   def HistogramExample.parse_opts(opts, params)

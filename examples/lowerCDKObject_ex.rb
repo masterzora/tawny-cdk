@@ -1,5 +1,5 @@
 #!/usr/bin/env ruby
-require './example'
+require_relative 'example'
 
 class LowerCDKObjectExample < Example
   def LowerCDKObjectExample.parse_opts(opts, param)

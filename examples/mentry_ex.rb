@@ -1,5 +1,5 @@
 #!/usr/bin/env ruby
-require './example'
+require_relative 'example'
 
 class MentryExample < Example
   def MentryExample.parse_opts(opts, param)

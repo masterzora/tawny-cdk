@@ -1,5 +1,5 @@
 #!/usr/bin/env ruby
-require './example'
+require_relative 'example'
 
 class SubwindowExample < CLIExample
   def SubwindowExample.parse_opts(opts, params)

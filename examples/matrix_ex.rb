@@ -1,5 +1,5 @@
 #!/usr/bin/env ruby
-require './example'
+require_relative 'example'
 
 class MatrixExample < Example
   def MatrixExample.parse_opts(opts, param)

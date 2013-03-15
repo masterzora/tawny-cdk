@@ -1,5 +1,5 @@
 #!/usr/bin/env ruby
-require './example'
+require_relative 'example'
 
 class CalendarExample < Example
   def CalendarExample.parse_opts(opts, param)

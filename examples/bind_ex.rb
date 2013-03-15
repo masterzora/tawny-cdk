@@ -1,6 +1,6 @@
 #!/usr/bin/env ruby
-require './example'
 require 'etc'
+require_relative './example'
 
 class BindExample < Example
   def BindExample.parse_opts(opts, param)

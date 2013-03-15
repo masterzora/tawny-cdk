@@ -1,5 +1,5 @@
 #!/usr/bin/env ruby
-require './example'
+require_relative 'example'
 
 class GraphExample < CLIExample
   def GraphExample.parse_opts(opts, params)

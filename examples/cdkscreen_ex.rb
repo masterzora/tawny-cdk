@@ -1,5 +1,5 @@
 #!/usr/bin/env ruby
-require './example'
+require_relative 'example'
 
 class CDKScreenExample < Example
   # This demonstrates how to create four different Cdk screens
