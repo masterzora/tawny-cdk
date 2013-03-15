@@ -26,7 +26,7 @@
 # SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 require 'ncurses'
-require 'scanf'  # For the SCALE module
+require 'scanf'
 
 module CDK
   # some useful global values
@@ -1105,18 +1105,9 @@ module CDK
 
     def getc
       cdktype = self.object_type
-      # CDKOBJS *test = bindableObject (&cdktype, obj);
       test = self.bindableObject(cdktype)
       result = @input_window.wgetch
 
-      #if (result >= 0
-      #    && test != 0
-      #    && (unsigned)result < test->bindingCount
-      #    && test->bindingList[result].bindFunction == getcCDKBind)
-      # [...]
-      # else if (test == 0
-      #          || (unsigned)result >= test->bindingCount
-      #          || test->bindingList[result].bindFunction == 0)
       if result >= 0 && !(test.nil?) && test.binding_list.include?(result) &&
           test.binding_list[result][0] == :getc
         result = test.binding_list[result][1]
@@ -3364,14 +3355,8 @@ module CDK
       box_width += 1
 
       # Make sure we didn't extend beyond the dimensions of the window.
-      box_width = if box_width > parent_width
-                  then parent_width
-                  else box_width
-                  end
-      box_height = if box_height > parent_height
-                   then parent_height
-                   else box_height
-                   end
+      box_width = [box_width, parent_width].min
+      box_height = [box_height, parent_height].min
 
       # Now we have to readjust the x and y positions
       xtmp = [x_pos]
@@ -3388,7 +3373,7 @@ module CDK
       @button_count = button_count
       @current_button = 0
       @rows = rows
-      @cols = if button_count < cols then button_count else cols end
+      @cols = [button_count, cols].min
       @box_height = box_height
       @box_width = box_width
       @highlight = highlight
@@ -3412,6 +3397,7 @@ module CDK
         self.destroy
         return nil
       end
+      @win.keypad(true)
 
       # Was there a shadow?
       if shadow
@@ -3425,8 +3411,6 @@ module CDK
 
     # This activates the widget.
     def activate(actions)
-      input = 0
-
       # Draw the buttonbox box.
       self.draw(@box)
 
@@ -15821,12 +15805,12 @@ module CDK
         setFocus(curobj)
       when CDK::REFRESH
         # redraw screen
-        refreshCDKScreen(screen)
+        screen.refresh
         setFocus(curobj)
       else
         # not everyone wants menus, so we make them optional here
         if !(func_menu_key.nil?) &&
-            (func_menu_key.call(key_code, function_key) != 0)
+            (func_menu_key.call(key_code, function_key))
           # find and enable drop down menu
           screen.object.each do |object|
             if !(object.nil?) && object.object_type == :MENU
@@ -15858,6 +15842,7 @@ module CDK
           check_menu_key = lambda do |key_code, function_key|
             Traverse.checkMenuKey(key_code, function_key)
           end
+
 
           Traverse.traverseCDKOnce(screen, curobj, key,
               function[0], check_menu_key)
@@ -15932,12 +15917,12 @@ module CDK
           menu.inject(key)
           done = true
         else
-          done = menu.inject(key)
+          done = (menu.inject(key) >= 0)
         end
       end
 
       if (newobj = Traverse.getCDKFocusCurrent(screen)).nil?
-        newobj = Traverse.setCDKFocusNext(screen);
+        newobj = Traverse.setCDKFocusNext(screen)
       end
 
       return switchFocus(newobj, menu)
