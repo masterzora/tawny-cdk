@@ -57,3 +57,10 @@ Mike Glover's CDK it is essentially usable, but there's still a lot to do:
      would be interesting to add.  As with fixes, some of them may be easier
      to implement in the Ruby version and then use the insights gained to
      kick back to the C.
+ * Collections
+   - It's simple: a widget that is really a collection of widgets.  Fully take
+     advantage of real object-orientation and polymorphism and make a widget
+     that collects widgets and handles them as one.  Have its activate really
+     activate the focused widget, move affect all widgets in the collection as
+     one, and things like that.  Basically, make it really easy to combine
+     widgets in useful manners
