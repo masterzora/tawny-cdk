@@ -337,43 +337,12 @@ module CDK
 
     # Move the menu to the given location.
     def move(xplace, yplace, relative, refresh_flag)
-      current_x = @screen.window.getbegx
-      current_y = @screen.window.getbegy
-      xpos = xplace
-      ypos = yplace
-
-      # if this is a relative move, then we will adjust where we want
-      # to move to.
-      if relative
-        xpos = @screen.window.getbegx + xplace
-        ypos = @screen.window.getbegy + yplace
-      end
-
-      # Adjust the window if we need to.
-      xtmp = [xpos]
-      ytmp = [ypos]
-      CDK.alignxy(@screen.window, xtmp, ytmp,
-          @screen.window.getmaxx, @screen.window.getmaxy)
-      xpos = xtmp[0]
-      ypos = ytmp[0]
-
-      # Get the difference
-      xdiff = current_x - xpos
-      ydiff = current_y - ypos
-
-      # Move the windows to the new location.
-      CDK.moveCursesWindow(@screen.window, -xdiff, -ydiff)
+      windows = [@screen.window]
       (0...@menu_items).each do |x|
-        CDK.moveCursesWindow(@title_win[x], -xdiff, -ydiff)
+        windows << @title_win[x]
       end
-
-      # Touch the windows so they 'move.
-      CDK::SCREEN.refresh(@screen.window)
-
-      # Redraw the window, if they asked for it.
-      if refresh_flag
-        self.draw(@box)
-      end
+      self.move_specific(xplace, yplace, relative, refresh_flag,
+          windows, [])
     end
 
     # Set the background attribute of the widget.

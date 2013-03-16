@@ -330,12 +330,7 @@ module CDK
       end
 
       # Put the focus on the current cell.
-      Draw.attrbox(self.CurMatrixCell, Ncurses::ACS_ULCORNER,
-          Ncurses::ACS_URCORNER, Ncurses::ACS_LLCORNER,
-          Ncurses::ACS_LRCORNER, Ncurses::ACS_HLINE,
-          Ncurses::ACS_VLINE, Ncurses::A_BOLD)
-      self.CurMatrixCell.wrefresh
-      self.highlightCell
+      self.focusCurrent
 
       # Check if there is a pre-process function to be called.
       unless @pre_process_func.nil?
@@ -582,26 +577,13 @@ module CDK
             end
             @cell[@oldcrow][@oldccol].wrefresh
 
-            # Highlight the new cell.
-            Draw.attrbox(self.CurMatrixCell, Ncurses::ACS_ULCORNER,
-                Ncurses::ACS_URCORNER, Ncurses::ACS_LLCORNER,
-                Ncurses::ACS_LRCORNER, Ncurses::ACS_HLINE,
-                Ncurses::ACS_VLINE, Ncurses::A_BOLD)
-            self.CurMatrixCell.wrefresh
-            self.highlightCell
+            self.focusCurrent
           end
 
           # Redraw each cell
           if refresh_cells
             self.drawEachCell
-
-            # Highlight the current cell.
-            Draw.attrbox(self.CurMatrixCell, Ncurses::ACS_ULCORNER,
-                Ncurses::ACS_URCORNER, Ncurses::ACS_LLCORNER,
-                Ncurses::ACS_LRCORNER, Ncurses::ACS_HLINE,
-                Ncurses::ACS_VLINE, Ncurses::A_BOLD)
-            self.CurMatrixCell.wrefresh
-            self.highlightCell
+            self.focusCurrent
           end
 
           # Move to the correct position in the cell.
@@ -664,47 +646,17 @@ module CDK
 
     # This moves the matrix field to the given location.
     def move(xplace, yplace, relative, refresh_flag)
-      current_x = @win.getbegx
-      current_y = @win.getbegy
-      xpos = xplace
-      ypos = yplace
-
-      # if this is a relative move, then we will adjust where we want
-      # to move to.
-      if relative
-        xpos = @win.getbegx + xplace
-        ypos = @win.getbegy + yplace
-      end
-
-      # Adjust the window if we need to
-      xtmp = [xpos]
-      ytmp = [ypos]
-      CDK.alignxy(@screen.window, xtmp, ytmp, @box_width, @box_height)
-      xpos = xtmp[0]
-      ypos = ytmp[0]
-
-      # Get the difference.
-      xdiff = current_x - xpos
-      ydiff = current_y - ypos
-
-      # Move the window to the new location.
-      CDK.moveCursesWindow(@win, -xdiff, -ydiff)
+      windows = [@win]
 
       (0..@vrows).each do |x|
         (0..@vcols).each do |y|
-          CDK.moveCursesWindow(@cell[x][y], -xdiff, -ydiff)
+          windows << @cell[x][y]
         end
       end
 
-      CDK.moveCursesWindow(@shadow_win, -xdiff, -ydiff)
-
-      # Touch the windows so they 'move'
-      @screen.window.refresh
-
-      # Redraw the window, if they asked for it.
-      if refresh_flag
-        self.draw(@box)
-      end
+      windows << @shadow_win
+      self.move_specific(xplace, yplace, relative, refresh_flag,
+         windows, [])
     end
 
     # This draws a cell within a matrix.
@@ -841,13 +793,7 @@ module CDK
         end
       end
 
-      # Highlight the current cell.
-      Draw.attrbox(self.CurMatrixCell, Ncurses::ACS_ULCORNER,
-          Ncurses::ACS_URCORNER, Ncurses::ACS_LLCORNER,
-          Ncurses::ACS_LRCORNER, Ncurses::ACS_HLINE,
-          Ncurses::ACS_VLINE, Ncurses::A_BOLD)
-      self.CurMatrixCell.wrefresh
-      self.highlightCell
+      self.focusCurrent
     end
 
     def drawEachColTitle
@@ -914,13 +860,7 @@ module CDK
       self.drawEachColTitle
       self.drawEachRowTitle
       self.drawEachCell
-
-      # Highlight the current cell.
-      Draw.attrbox(self.CurMatrixCell, Ncurses::ACS_ULCORNER,
-          Ncurses::ACS_URCORNER, Ncurses::ACS_LLCORNER, Ncurses::ACS_LRCORNER,
-          Ncurses::ACS_HLINE, Ncurses::ACS_VLINE, Ncurses::A_BOLD)
-      self.CurMatrixCell.wrefresh
-      self.highlightCell
+      self.focusCurrent
     end
 
     # This function destroys the matrix widget.
@@ -1187,6 +1127,15 @@ module CDK
 
     def CurMatrixInfo
       return @info[@trow + @crow - 1][@lcol + @ccol - 1]
+    end
+
+    def focusCurrent
+      Draw.attrbox(self.CurMatrixCell, Ncurses::ACS_ULCORNER,
+          Ncurses::ACS_URCORNER, Ncurses::ACS_LLCORNER,
+          Ncurses::ACS_LRCORNER, Ncurses::ACS_HLINE,
+          Ncurses::ACS_VLINE, Ncurses::A_BOLD)
+      self.CurMatrixCell.wrefresh
+      self.highlightCell
     end
 
     # This returns the current row/col cell

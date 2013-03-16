@@ -246,41 +246,9 @@ module CDK
 
     # This moves the radio field to the given location.
     def move(xplace, yplace, relative, refresh_flag)
-      current_x = @win.getbegx
-      current_y = @win.getbegy
-      xpos = xplace
-      ypos = yplace
-
-      # If this is a relative move, then we will adjust where we want
-      # to move to.
-      if relative
-        xpos = @win.getbegx + xplace
-        ypos = @win.getbegy + yplace
-      end
-
-      # Adjust the window if we need to.
-      xtmp = []
-      ytmp = []
-      CDK.alignxy(@win, xtmp, ytmp, @box_width, @box_height)
-      xpos = xtmp[0]
-      ypos = ytmp[0]
-
-      # Get the difference.
-      xdiff = current_x - xpos
-      ydiff = current_y - ypos
-
-      # Move the window to the new location.
-      CDK.moveCursesWindow(@win, -xdiff, -ydiff)
-      CDK.moveCursesWindow(@scrollbar_win, -xdiff, -ydiff)
-      CDK.moveCursesWindow(@shadow_win, -xdiff, -ydiff)
-
-      # Touch the windows so they 'move'.
-      @screen.window.refresh
-
-      # Redraw the window, if they asked for it.
-      if refresh_flag
-        self.draw(@box)
-      end
+      windows = [@win, @scrollbar_win, @shadow_win]
+      self.move_specific(xplace, yplace, relative, refresh_flag,
+          windows, subwidgets)
     end
 
     # This function draws the radio widget.

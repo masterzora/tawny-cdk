@@ -383,42 +383,9 @@ module CDK
 
     # This moves the widget's data field to the given location.
     def move(xplace, yplace, relative, refresh_flag)
-      current_x = @win.getbegx
-      current_y = @win.getbegy
-      xpos = xplace
-      ypos = yplace
-
-      # if this is a relative move, then we will adjust where we want
-      # to move to.
-      if relative
-        xpos = @win.getbegx + xplace
-        ypos = @win.getbegy + yplace
-      end
-
-      # Adjust the window if we need to.
-      xtmp = [xpos]
-      ytmp = [ypos]
-      CDK.alignxy(@screen.window, xtmp, ytmp, @box_width, @box_height)
-      xpos = xtmp[0]
-      ypos = ytmp[0]
-
-      # Get the difference.
-      xdiff = current_x - xpos
-      ydiff = current_y - ypos
-
-      # Move the window to the new location.
-      self.moveCursesWindow(@win, -xdiff, -ydiff)
-      self.moveCursesWindow(@label_win, -xdiff, -ydiff)
-      self.moveCursesWindow(@field_win, -xdiff, -ydiff)
-      self.moveCursesWindow(@shadow_win, -xdiff, -ydiff)
-
-      # Touch the windows so they 'move'
-      CDK::SCREEN.refreshCDKWindow(@screen.window)
-
-      # Redraw the window, if they asked for it.
-      if refresh_flag
-        self.draw(@box)
-      end
+      windows = [@win, @label_win, @field_win, @shadow_win]
+      self.move_specific(xplace, yplace, relative, refresh_flag,
+          windows, [])
     end
 
     # This function draws the widget.

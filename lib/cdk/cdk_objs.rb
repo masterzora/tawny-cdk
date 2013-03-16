@@ -55,7 +55,52 @@ module CDK
     def erase
     end
 
-    def move(a,b,c,d)
+    def move(xplace, yplace, relative, refresh_flag)
+      self.move_specific(xplace, yplace, relative, refresh_flag,
+          [@win, @shadow_win], [])
+    end
+
+    def move_specific(xplace, yplace, relative, refresh_flag,
+        windows, subwidgets)
+      current_x = @win.getbegx
+      current_y = @win.getbegy
+      xpos = xplace
+      ypos = yplace
+
+      # If this is a relative move, then we will adjust where we want
+      # to move to.
+      if relative
+        xpos = @win.getbegx + xplace
+        ypos = @win.getbegy + yplace
+      end
+
+      # Adjust the window if we need to
+      xtmp = [xpos]
+      ytmp = [ypos]
+      CDK.alignxy(@screen.window, xtmp, ytmp, @box_width, @box_height)
+      xpos = xtmp[0]
+      ypos = ytmp[0]
+
+      # Get the difference
+      xdiff = current_x - xpos
+      ydiff = current_y - ypos
+
+      # Move the window to the new location.
+      windows.each do |window|
+        CDK.moveCursesWindow(window, -xdiff, -ydiff)
+      end
+
+      subwidgets.each do |subwidget|
+        subwidget.move(xplace, yplace, relative, false)
+      end
+
+      # Touch the windows so they 'move'
+      CDK::SCREEN.refreshCDKWindow(@screen.window)
+
+      # Redraw the window, if they asked for it
+      if refresh_flag
+        self.draw(@box)
+      end
     end
 
     def inject(a)

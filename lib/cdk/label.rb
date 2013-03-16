@@ -173,40 +173,9 @@ module CDK
     end
 
     # This moves the label field to the given location
-    def move(xplace, yplace, relative, refresh_flag)
-      current_x = @win.getbegx
-      current_y = @win.getbegy
-      xpos = [xplace]
-      ypos = [yplace]
-      xdiff = 0
-      ydiff = 0
-
-      # If this is a relative move, then we will adjust where we want
-      # to move to.
-      if relative
-        xpos = [@win.getbegx + xplace]
-        ypos = [@win.getbegy + yplace]
-      end
-
-      # Adjust the window if we need to
-      CDK.alignxy(@screen.window, xpos, ypos, @box_width, @box_height)
-
-      # Get the diference.
-      xdiff = current_x - xpos[0]
-      ydiff = current_y = ypos[0]
-
-      # Move the window to the new location.
-      CDK.moveCursesWindow(@win, -xdiff, -ydiff)
-      CDK.moveCursesWindow(@shadow_win, -xdiff, -ydiff)
-
-      # Touch the windows so the 'move'
-      CDK::SCREEN.refreshCDKWindow(@screen.window)
-
-      # Redraw the window, if they asked for it.
-      if refresh_flag
-        self.draw(@box)
-      end
-    end
+    # Inherited
+    # def move(xplace, yplace, relative, refresh_flag)
+    # end
 
     # This destroys the label object pointer.
     def destroy

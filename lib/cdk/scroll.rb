@@ -278,44 +278,9 @@ module CDK
 
     # This moves the scroll field to the given location.
     def move(xplace, yplace, relative, refresh_flag)
-      current_x = @win.getbegx
-      current_y = @win.getbegy
-      xpos = xplace
-      ypos = yplace
-      xdiff = 0
-      ydiff = 0
-
-      # If this is a relative move, then we will adjust where we want to
-      # move to
-      if relative
-        xpos = @win.getbegx + xplace
-        ypos = @win.getbegy + yplace
-      end
-
-      # Adjust the window if we need to.
-      xtmp = [xpos]
-      ytmp = [ypos]
-      CDK.alignxy(@screen.window, xpos, ypos, @box_width, @box_height)
-      xpos = xtmp[0]
-      ypos = ytmp[0]
-      
-      # Get the difference
-      xdiff = current_x - xpos
-      ydiff - current_y - ypos
-
-      # Move the window to the new location.
-      CDK.moveCursesWindow(@win, -xdiff, -ydiff)
-      CDK.moveCursesWindow(@list_win, -xdiff, -ydiff)
-      CDK.moveCursesWindow(@shadow_win, -xdiff, -ydiff)
-      CDK.moveCursesWindow(@scrollbar_win, -xdiff, -ydiff)
-
-      # Touch the windows so they 'move'.
-      self.screen.window.refresh
-
-      # Redraw the window, if they asked for it.
-      if refresh_flag
-        self.draw(@box)
-      end
+      windows = [@win, @list_win, @shadow_win, @scrollbar_win]
+      self.move_specific(xplace, yplace, relative, refresh_flag,
+          windows, [])
     end
 
     # This function draws the scrolling list widget.
