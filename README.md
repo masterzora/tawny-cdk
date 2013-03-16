@@ -1,9 +1,14 @@
 tawny-cdk
 ========
 
-A Ruby version of the curses development kit.
+A Ruby version of Thomas Dickey version of the curses development kit.
 
-Why tawny?  Because this is better than a ruby port.
+Why Tawny?  Because this is better than just a ruby port.  Or, rather, it
+will be.  At the moment it's pretty much just a Ruby port but the plan is
+a package that is easier to use and extend, with extra extensions to prove
+it.
+
+Currently requires ncurses-ruby (http://ncurses-ruby.berlios.de/).
 
 Currently implemented widgets:
  * Alphalist
@@ -30,4 +35,4 @@ Currently implemented widgets:
  * Template
  * Viewer
 
-Original C project page: http://invisible-island.net/cdk/
+Thomas Dickey's C project page: http://invisible-island.net/cdk/

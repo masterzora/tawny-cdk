@@ -1,0 +1,59 @@
+Tawny-Cdk TODO List
+------------------------------------------------------------------------------
+
+Now that Tawny CDK is basically a complete copy of Thomas Dickey version of
+Mike Glover's CDK it is essentially usable, but there's still a lot to do:
+
+ * Documentation
+   - Most of the original comments from the .c files were preserved but many
+     of those are less than helpful and some areas where they might be more
+     helpful are lacking.  Further, the .h files have a few potentially
+     useful comments that were not preserved.  Further, module, class, and
+     method docs are either lacking or nonexistent in most places. Tawny CDK
+     won't see a major version release until some better docs are in place.
+ * Code cleanup
+   - This project was how I learned Ruby so there are probably a fair number
+     of Ruby conventions being broken all over the place.  This goes double
+     since I stayed fairly close to the original C in some places where it
+     wasn't necessarily appropriate.
+ * Continue restructuring
+   - Related to but distinct from the cleanup.  The original C code was a
+     very impressive approximation of polymorphic object-oriented code.
+     Since Ruby is actually object-oriented I've mostly translated this into
+     this paradigm but some work still remains.  Some of the codebase can
+     definitely benefit from a more aggressive approach to the object
+     orientation and polymorphic behaviour.  Further, I need to take a more
+     critical eye at seeing what works better as inherited classes and what
+     works better as mixins since apparently those are different things in
+     Ruby.
+ * Error handling
+   - In part to allow for more rapid development and in part because I still
+     need to get more familiar with Ruby's exception handling but the code
+     is nowhere near as robust as it should be.  In some cases, such as a lot
+     of the file handling, this means implementing intelligent rescues.  In
+     other cases this means dealing more robustly with sensible but unexpected
+     parameter types.
+ * Package it all up
+   - Tawny CDK won't see a major version release until I work on packaging it
+     all up.
+ * Compatiblity version
+   - Right now I've significantly renamed and restructured a lot of things to
+     better facilitate development but have still attempted to remain somewhat
+     faithful to the original version.  At some point I'd like to fix this with
+     a sort of split: a less faithful 'primary' version that makes more sense
+     in Ruby and a as-faithful-as-possible 'compatibility' version that wraps
+     the primary version into the same (more-or-less) names and structure as
+     the original.
+ * Support other Curses packages
+   - Right now this is all developed for a very specific Ncurses package.
+     Ruby has multiple Curses packages so it would be nice to provide broader
+     support.
+ * Fixes
+   - The code has a few "FIXME(original)" tags strewn around.  Some of these
+     appear to be significantly easier to fix in Ruby and might even provide
+     some insight to allow me to kick fixes back to Thomas's project.
+ * The Cdk TODO List
+   - The Dickey/Glover version has its own TODO list with several items that
+     would be interesting to add.  As with fixes, some of them may be easier
+     to implement in the Ruby version and then use the insights gained to
+     kick back to the C.
