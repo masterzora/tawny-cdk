@@ -279,7 +279,7 @@ module CDK
         when "\r".ord, "\n".ord
           result = Ncurses::KEY_ENTER
         when "\t".ord
-          result = KEY_TAB
+          result = CDK::KEY_TAB
         when CDK::DELETE
           result = Ncurses::KEY_DC
         when "\b".ord
@@ -293,7 +293,7 @@ module CDK
         when CDK::BACKCHAR
           result = Ncurses::KEY_LEFT
         when CDK::NEXT
-          result = Ncurses::KEY_TAB
+          result = CDK::KEY_TAB
         when CDK::PREV
           result = Ncurses::KEY_BTAB
         end
